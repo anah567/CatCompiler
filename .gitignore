@@ -1,0 +1,21 @@
+# Ejecutables y resultados de compilación de Go
+/compi8am
+/compi8am.exe
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.out
+
+# Archivos locales del editor y del sistema
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Configuración local
+.env
+.env.*
+!.env.example
