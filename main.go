@@ -5,10 +5,25 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"polaobesahermosa/objects"
 	"polaobesahermosa/repl"
 )
 
 func main() {
+	// Con una ruta .ssg se ejecuta el archivo completo y se termina. Se usa
+	// un solo entorno para todas sus sentencias, igual que en el REPL.
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 {
+			fmt.Fprintln(os.Stderr, "uso: go run . [archivo.ssg]")
+			os.Exit(1)
+		}
+		if err := repl.RunFile(os.Args[1], os.Stdout, objects.NewEnvironment()); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Se obtiene el usuario del sistema para saludarlo por su nombre.
 	user, err := user.Current()
 	if err != nil {

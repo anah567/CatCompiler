@@ -2,19 +2,19 @@
 // un ciclo interactivo que
 //
 //	Read  → lee una línea que escribe el usuario,
-//	Eval  → la procesa (por ahora con el lexer o con el parser, todavía no
-//	        hay evaluador),
+//	Eval  → la procesa con el lexer, parser o evaluador,
 //	Print → muestra el resultado,
 //	Loop  → y vuelve a empezar.
 //
-// El REPL tiene dos MODOS:
+// El REPL tiene tres MODOS:
 //   - lexer:  muestra la lista de tokens de la línea.
 //   - parser: muestra el programa reconstruido y el AST en forma de árbol,
 //     o los errores de sintaxis si los hay.
+//   - evaluator: ejecuta el código y muestra su valor o error.
 //
-// El modo se elige al iniciar y se puede cambiar con los comandos :lexer y
-// :parser. Los comandos del REPL empiezan con ':' para no confundirse con
-// código del lenguaje.
+// El modo se elige al iniciar y se puede cambiar con :lexer, :parser y
+// :evaluator. El comando :cargar ejecuta un archivo .ssg. Todos empiezan
+// con ':' para no confundirse con código del lenguaje.
 package repl
 
 import (
@@ -24,7 +24,9 @@ import (
 	"strings"
 
 	"polaobesahermosa/ast"
+	"polaobesahermosa/evaluator"
 	"polaobesahermosa/lexer"
+	"polaobesahermosa/objects"
 	"polaobesahermosa/parser"
 	"polaobesahermosa/token"
 )
@@ -32,8 +34,9 @@ import (
 // Modos de funcionamiento del REPL. Se usa el mismo texto en el prompt
 // ("lexer>> " o "parser>> ") para que el usuario sepa en qué modo está.
 const (
-	modoLexer  = "lexer"
-	modoParser = "parser"
+	modoLexer     = "lexer"
+	modoParser    = "parser"
+	modoEvaluator = "evaluator"
 )
 
 // Start inicia el REPL.
@@ -54,6 +57,9 @@ func Start(in io.Reader, out io.Writer) {
 	if !ok {
 		return // la entrada terminó sin elegir modo
 	}
+	// Un solo entorno vive durante toda la sesión: let x = 3 en una línea
+	// permite usar x en la siguiente, incluso tras cambiar de modo.
+	env := objects.NewEnvironment()
 	imprimirAyuda(out)
 
 	// 2. Ciclo principal del REPL.
@@ -74,6 +80,18 @@ func Start(in io.Reader, out io.Writer) {
 
 		// 3. Si la línea empieza con ':' es un comando del REPL, no código.
 		if strings.HasPrefix(line, ":") {
+			// :cargar recibe el resto de la línea como ruta. Se reconoce
+			// antes del switch porque, a diferencia de los otros comandos,
+			// incluye un argumento que cambia cada vez.
+			if line == ":cargar" || strings.HasPrefix(line, ":cargar ") {
+				path := strings.TrimSpace(strings.TrimPrefix(line, ":cargar"))
+				if path == "" {
+					fmt.Fprintln(out, "Uso: :cargar ruta/al/archivo.ssg")
+				} else if err := RunFile(path, out, env); err != nil {
+					fmt.Fprintln(out, err)
+				}
+				continue
+			}
 			switch line {
 			case ":lexer":
 				modo = modoLexer
@@ -81,6 +99,9 @@ func Start(in io.Reader, out io.Writer) {
 			case ":parser":
 				modo = modoParser
 				fmt.Fprintln(out, "Modo parser: se mostrará el AST.")
+			case ":evaluator":
+				modo = modoEvaluator
+				fmt.Fprintln(out, "Modo evaluator: se ejecutará el código.")
 			case ":ayuda":
 				imprimirAyuda(out)
 			case ":salir":
@@ -93,17 +114,20 @@ func Start(in io.Reader, out io.Writer) {
 		}
 
 		// 4. Si no es comando, es código: se procesa según el modo actual.
-		if modo == modoLexer {
+		switch modo {
+		case modoLexer:
 			probarLexer(out, line)
-		} else {
+		case modoParser:
 			probarParser(out, line)
+		case modoEvaluator:
+			probarEvaluator(out, line, env)
 		}
 	}
 }
 
-// elegirModo muestra un menú para que el usuario elija si quiere probar
-// el lexer o el parser. Acepta "1"/"lexer" o "2"/"parser" (sin importar
-// mayúsculas). Si la respuesta no es válida, vuelve a preguntar.
+// elegirModo muestra un menú para escoger lexer, parser o evaluator.
+// Acepta tanto el número como el nombre, sin importar mayúsculas. Si la
+// respuesta no es válida, vuelve a preguntar.
 //
 // Devuelve el modo elegido y true, o "" y false si la entrada se terminó
 // antes de elegir (en ese caso el REPL debe cerrarse).
@@ -112,6 +136,7 @@ func elegirModo(scanner *bufio.Scanner, out io.Writer) (string, bool) {
 		fmt.Fprintln(out, "\n¿Qué quieres probar?")
 		fmt.Fprintln(out, "  1) Lexer  (ver los tokens)")
 		fmt.Fprintln(out, "  2) Parser (ver el AST)")
+		fmt.Fprintln(out, "  3) Evaluator (ejecutar código)")
 		fmt.Fprint(out, "Opción: ")
 
 		if !scanner.Scan() {
@@ -123,8 +148,10 @@ func elegirModo(scanner *bufio.Scanner, out io.Writer) (string, bool) {
 			return modoLexer, true
 		case "2", "parser":
 			return modoParser, true
+		case "3", "evaluator":
+			return modoEvaluator, true
 		default:
-			fmt.Fprintln(out, "Opción no válida, escribe 1 o 2.")
+			fmt.Fprintln(out, "Opción no válida, escribe 1, 2 o 3.")
 		}
 	}
 }
@@ -134,6 +161,8 @@ func imprimirAyuda(out io.Writer) {
 	fmt.Fprintln(out, "\nComandos:")
 	fmt.Fprintln(out, "  :lexer   cambiar a modo lexer")
 	fmt.Fprintln(out, "  :parser  cambiar a modo parser")
+	fmt.Fprintln(out, "  :evaluator cambiar a modo evaluator")
+	fmt.Fprintln(out, "  :cargar archivo.ssg ejecutar un archivo en el entorno actual")
 	fmt.Fprintln(out, "  :ayuda   mostrar esta ayuda")
 	fmt.Fprintln(out, "  :salir   salir del REPL")
 	fmt.Fprintln(out)
@@ -174,6 +203,19 @@ func probarParser(out io.Writer, line string) {
 	fmt.Fprintf(out, "  %s\n", program.String())
 	fmt.Fprintln(out, "AST:")
 	imprimirArbol(out, program, "", "")
+}
+
+// probarEvaluator repite las dos primeras fases (lexer y parser), revisa
+// errores de sintaxis y solo entonces ejecuta el AST. Las declaraciones
+// producen null; mostrarlo deja claro que no son expresiones con resultado.
+func probarEvaluator(out io.Writer, line string, env *objects.Environment) {
+	p := parser.New(lexer.New(line))
+	program := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		imprimirErroresParser(out, p.Errors())
+		return
+	}
+	fmt.Fprintln(out, evaluator.Eval(program, env).Inspect())
 }
 
 // imprimirErroresParser muestra los errores de sintaxis encontrados, uno
