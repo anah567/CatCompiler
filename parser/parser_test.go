@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"os"
 	"polaobesahermosa/ast"
 	"polaobesahermosa/lexer"
 	"reflect"
@@ -349,6 +350,204 @@ func TestSentenciasSimples(t *testing.T) {
 	})
 }
 
+// TestIf revisa if, if-else, else if y cuerpos sin llaves.
+func TestIf(t *testing.T) {
+	t.Run("if sin else", func(t *testing.T) {
+		stmt := onlyStatement(t, "if (x > 1) { y = 1; }").(*ast.IfExpression)
+		if stmt.Condition.String() != "(x > 1)" || len(stmt.Consequence.Statements) != 1 ||
+			stmt.Alternative != nil {
+			t.Fatalf("if mal formado: %s", stmt.String())
+		}
+	})
+	t.Run("if con else", func(t *testing.T) {
+		stmt := onlyStatement(t, "if (ok) { a = 1; } else { a = 2; }").(*ast.IfExpression)
+		if stmt.Alternative == nil || stmt.Alternative.String() != "{ (a = 2); }" {
+			t.Fatalf("else mal formado: %s", stmt.String())
+		}
+	})
+	t.Run("else if es un if dentro del else", func(t *testing.T) {
+		stmt := onlyStatement(t,
+			"if (a) { x = 1; } else if (b) { x = 2; } else { x = 3; }").(*ast.IfExpression)
+		if len(stmt.Alternative.Statements) != 1 {
+			t.Fatalf("el else debía tener una sola sentencia")
+		}
+		inner, ok := stmt.Alternative.Statements[0].(*ast.IfExpression)
+		if !ok {
+			t.Fatalf("la sentencia del else debía ser IfExpression, es %T",
+				stmt.Alternative.Statements[0])
+		}
+		if inner.Condition.String() != "b" || inner.Alternative.String() != "{ (x = 3); }" {
+			t.Fatalf("else if mal formado: %s", inner.String())
+		}
+	})
+	t.Run("cuerpos de una sola sentencia", func(t *testing.T) {
+		stmt := onlyStatement(t, "if (n <= 1) return 1; else return n;").(*ast.IfExpression)
+		if stmt.Consequence.String() != "{ return 1; }" ||
+			stmt.Alternative.String() != "{ return n; }" {
+			t.Fatalf("cuerpos mal formados: %s", stmt.String())
+		}
+	})
+	t.Run("el else es del if más cercano", func(t *testing.T) {
+		outer := onlyStatement(t, "if (a) if (b) x = 1; else x = 2;").(*ast.IfExpression)
+		if outer.Alternative != nil {
+			t.Fatalf("el if de afuera no debía tener else")
+		}
+		inner := outer.Consequence.Statements[0].(*ast.IfExpression)
+		if inner.Alternative == nil {
+			t.Fatalf("el else debía quedar en el if de adentro")
+		}
+	})
+}
+
+// TestWhile revisa el ciclo while.
+func TestWhile(t *testing.T) {
+	stmt := onlyStatement(t, "while (total > 0) { total--; }").(*ast.WhileExpression)
+	if stmt.Condition.String() != "(total > 0)" || stmt.Body.String() != "{ (total--); }" {
+		t.Fatalf("while mal formado: %s", stmt.String())
+	}
+}
+
+// TestFor revisa el ciclo for con y sin cada una de sus partes.
+func TestFor(t *testing.T) {
+	tests := []struct {
+		input     string
+		initType  string // tipo Go del Init ("" = nil)
+		init      string
+		condition string
+		update    string
+		body      string
+	}{
+		{"for (int i = 0; i < 3; i++) { total += arr[i]; }", "*ast.VarDeclaration",
+			"int i = 0;", "(i < 3)", "(i++)", "{ (total += (arr[i])); }"},
+		{"for (i = 0; i < n; i += 2) x++;", "*ast.ExpressionStatement",
+			"(i = 0);", "(i < n)", "(i += 2)", "{ (x++); }"},
+		{"for (int i = 0, j = 9; i < j; i++) {}", "*ast.VarDeclarationList",
+			"int i = 0, j = 9;", "(i < j)", "(i++)", "{ }"},
+		{"for (;;) {}", "", "", "", "", "{ }"},
+		{"for (; i < 3;) {}", "", "", "(i < 3)", "", "{ }"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			stmt := onlyStatement(t, tt.input).(*ast.ForExpression)
+			initType := ""
+			if stmt.Init != nil {
+				initType = reflect.TypeOf(stmt.Init).String()
+			}
+			if initType != tt.initType {
+				t.Fatalf("Init: se esperaba %s, es %s", tt.initType, initType)
+			}
+			if got := strOrEmpty(stmt.Init); got != tt.init {
+				t.Fatalf("Init: se esperaba %q, se obtuvo %q", tt.init, got)
+			}
+			if got := strOrEmpty(stmt.Condition); got != tt.condition {
+				t.Fatalf("Condition: se esperaba %q, se obtuvo %q", tt.condition, got)
+			}
+			if got := strOrEmpty(stmt.Update); got != tt.update {
+				t.Fatalf("Update: se esperaba %q, se obtuvo %q", tt.update, got)
+			}
+			if stmt.Body.String() != tt.body {
+				t.Fatalf("Body: se esperaba %q, se obtuvo %q", tt.body, stmt.Body.String())
+			}
+		})
+	}
+}
+
+// TestCout revisa la lista de valores de cout y el nodo de endl.
+func TestCout(t *testing.T) {
+	tests := []struct {
+		input  string
+		values []string
+	}{
+		{`cout << "Hola " << nombre << endl;`, []string{`"Hola "`, "nombre", "endl"}},
+		{"cout << a + b * 2 << endl;", []string{"(a + (b * 2))", "endl"}},
+		{"cout << (a < b);", []string{"(a < b)"}},
+		{"cout << factorial(5) << \"\\n\";", []string{"factorial(5)", `"\n"`}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			stmt := onlyStatement(t, tt.input).(*ast.CoutStatement)
+			if got := strList(stmt.Values); !reflect.DeepEqual(got, tt.values) {
+				t.Fatalf("se esperaba %v, se obtuvo %v", tt.values, got)
+			}
+		})
+	}
+
+	t.Run("endl es EndlLiteral", func(t *testing.T) {
+		stmt := onlyStatement(t, "cout << endl;").(*ast.CoutStatement)
+		if _, ok := stmt.Values[0].(*ast.EndlLiteral); !ok {
+			t.Fatalf("se esperaba *ast.EndlLiteral, es %T", stmt.Values[0])
+		}
+	})
+}
+
+// TestProgramaDeReferencia parsea el programa completo de ejemplo y revisa
+// su estructura principal.
+func TestProgramaDeReferencia(t *testing.T) {
+	src, err := os.ReadFile("testdata/programa.cpp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	program := parseOK(t, string(src))
+
+	// #include y using no generan nodos: quedan factorial y main.
+	if len(program.Statements) != 2 {
+		t.Fatalf("se esperaban 2 funciones, hay %d sentencias", len(program.Statements))
+	}
+	factorial := program.Statements[0].(*ast.FunctionDeclaration)
+	wantFact := "int factorial(int n) { if ((n <= 1)) { return 1; } return (n * factorial((n - 1))); }"
+	if factorial.String() != wantFact {
+		t.Fatalf("factorial:\nse esperaba %s\nse obtuvo   %s", wantFact, factorial.String())
+	}
+
+	main := program.Statements[1].(*ast.FunctionDeclaration)
+	if main.Name.Value != "main" || main.ReturnType != "int" || len(main.Params) != 0 {
+		t.Fatalf("main mal formado")
+	}
+
+	// Tipo de nodo de cada sentencia de main, en orden.
+	wantTypes := []string{
+		"*ast.VarDeclaration", // int edad = 20;
+		"*ast.VarDeclaration", // double precio = 3.5;
+		"*ast.VarDeclaration", // bool ok = ...;
+		"*ast.VarDeclaration", // string nombre = "Ana";
+		"*ast.VarDeclaration", // int arr[3] = {1, 2, 3};
+		"*ast.VarDeclaration", // int total = 0;
+		"*ast.ForExpression",
+		"*ast.WhileExpression",
+		"*ast.IfExpression",
+		"*ast.ReturnStatement",
+	}
+	gotTypes := []string{}
+	for _, s := range main.Body.Statements {
+		gotTypes = append(gotTypes, reflect.TypeOf(s).String())
+	}
+	if !reflect.DeepEqual(gotTypes, wantTypes) {
+		t.Fatalf("sentencias de main:\nse esperaba %v\nse obtuvo   %v", wantTypes, gotTypes)
+	}
+
+	ok := main.Body.Statements[2].(*ast.VarDeclaration)
+	if ok.Value.String() != "((edad >= 18) && (precio < 10.0))" {
+		t.Fatalf("bool ok: %s", ok.Value.String())
+	}
+	arr := main.Body.Statements[4].(*ast.VarDeclaration)
+	if arr.String() != "int arr[3] = {1, 2, 3};" {
+		t.Fatalf("arr: %s", arr.String())
+	}
+
+	// if (ok) {...} else if (edad == 0) {...} else {...}
+	ifStmt := main.Body.Statements[8].(*ast.IfExpression)
+	elseIf, isIf := ifStmt.Alternative.Statements[0].(*ast.IfExpression)
+	if !isIf || elseIf.Condition.String() != "(edad == 0)" || elseIf.Alternative == nil {
+		t.Fatalf("else if mal formado: %s", ifStmt.String())
+	}
+	cout := ifStmt.Consequence.Statements[0].(*ast.CoutStatement)
+	if len(cout.Values) != 5 {
+		t.Fatalf("el cout del if debía tener 5 valores, tiene %d", len(cout.Values))
+	}
+}
+
 // TestErrores revisa el mensaje EXACTO (tipo, línea, columna y texto) de
 // cada error, y que no aparezcan errores en cascada.
 func TestErrores(t *testing.T) {
@@ -449,6 +648,55 @@ func TestErrores(t *testing.T) {
 				"Error léxico [línea 1, columna 5]: cadena sin cerrar: falta '\"'",
 				"Error sintáctico [línea 1, columna 11]: se esperaba una expresión pero se encontró el fin del archivo",
 			},
+		},
+		{
+			name:  "if sin paréntesis",
+			input: "if x > 1 { }",
+			want:  []string{"Error sintáctico [línea 1, columna 4]: se esperaba '(' pero se encontró 'x'"},
+		},
+		{
+			// Falta el ')': se salta el cuerpo del if completo y la
+			// declaración siguiente se parsea sin errores nuevos.
+			name:  "condición sin cerrar",
+			input: "if (x > 1 { y = 2; }\nint z = 3;",
+			want:  []string{"Error sintáctico [línea 1, columna 11]: se esperaba ')' pero se encontró '{'"},
+		},
+		{
+			name:  "while sin cuerpo",
+			input: "while (x)",
+			want:  []string{"Error sintáctico [línea 1, columna 10]: se esperaba una expresión pero se encontró el fin del archivo"},
+		},
+		{
+			name:  "for con una sola ';'",
+			input: "for (int i = 0; i < 3) {}",
+			want:  []string{"Error sintáctico [línea 1, columna 22]: se esperaba ';' pero se encontró ')'"},
+		},
+		{
+			name:  "cout sin <<",
+			input: "cout x;",
+			want:  []string{"Error sintáctico [línea 1, columna 6]: se esperaba '<<' pero se encontró 'x'"},
+		},
+		{
+			name:  "cout sin valor",
+			input: "cout << ;",
+			want:  []string{"Error sintáctico [línea 1, columna 9]: se esperaba una expresión pero se encontró ';'"},
+		},
+		{
+			// Igual que en C++: < tiene menor precedencia que <<, así que
+			// cout << a < b se lee como (cout << a) < b.
+			name:  "comparación en cout sin paréntesis",
+			input: "cout << a < b;",
+			want:  []string{"Error sintáctico [línea 1, columna 11]: se esperaba ';' pero se encontró '<'"},
+		},
+		{
+			name:  "else sin if",
+			input: "else { }",
+			want:  []string{"Error sintáctico [línea 1, columna 1]: se esperaba una expresión pero se encontró 'else'"},
+		},
+		{
+			name:  "falta la llave de main",
+			input: "int main() {\n  if (x) {\n    y = 1;\n}",
+			want:  []string{"Error sintáctico [línea 4, columna 2]: falta '}' para cerrar el bloque abierto en la línea 1"},
 		},
 		{
 			// Dos sentencias con error separadas por una correcta: se

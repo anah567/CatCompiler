@@ -184,6 +184,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.INCREMENT, p.parsePrefixExpression) // ++x
 	p.registerPrefix(token.DECREMENT, p.parsePrefixExpression) // --x
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)   // (a + b)
+	p.registerPrefix(token.ENDL, p.parseEndl)                  // endl
 
 	// --- Funciones INFIJAS: tokens que van DESPUÉS de una expresión ---
 	p.infixParseFns = make(map[token.TokenType]infixParseFn)
@@ -415,6 +416,8 @@ func (p *Parser) ParseProgram() *ast.Program {
 // actual:
 //   - un tipo o 'const' → declaración de variable o función (int x = 5;)
 //   - 'return'          → retorno (return x;)
+//   - 'if', 'while', 'for' → estructuras de control
+//   - 'cout'            → impresión (cout << x << endl;)
 //   - '{'               → bloque suelto (abre un ámbito nuevo)
 //   - 'using'           → using namespace std; (se acepta y se ignora)
 //   - ';'               → sentencia vacía, se ignora
@@ -434,6 +437,14 @@ func (p *Parser) parseStatement() ast.Statement {
 	switch p.curToken.Type {
 	case token.RETURN:
 		return p.parseReturnStatement()
+	case token.IF:
+		return p.parseIfStatement()
+	case token.WHILE:
+		return p.parseWhileStatement()
+	case token.FOR:
+		return p.parseForStatement()
+	case token.COUT:
+		return p.parseCoutStatement()
 	case token.LBRACE:
 		return p.parseBlockStatement()
 	case token.USING:
@@ -544,6 +555,233 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 
 	p.blockDepth--
 	return block
+}
+
+// ---------------------------------------------------------------------------
+// Estructuras de control y cout
+// ---------------------------------------------------------------------------
+
+// parseBody parsea el CUERPO de un if, else, while, for o do. Como en C++,
+// puede ser un bloque entre llaves o UNA sola sentencia:
+//
+//	if (x) { y = 1; }      cuerpo = el bloque
+//	if (x) y = 1;          cuerpo = la sentencia, envuelta en un bloque
+//
+// Envolver la sentencia sola en un BlockStatement hace que el evaluador
+// siempre reciba un bloque, escriba o no las llaves el programador.
+//
+//	Al entrar: curToken = token ANTERIOR al cuerpo (')' , 'else' o 'do')
+//	Al salir:  curToken = último token del cuerpo ('}' o ';')
+func (p *Parser) parseBody() *ast.BlockStatement {
+	p.nextToken() // curToken = primer token del cuerpo
+
+	if p.curTokenIs(token.LBRACE) {
+		return p.parseBlockStatement()
+	}
+
+	block := &ast.BlockStatement{Token: p.curToken, Statements: []ast.Statement{}}
+	p.blockDepth++ // la sentencia sola también está "dentro" de un bloque
+	stmt := p.parseStatement()
+	p.blockDepth--
+	if stmt != nil {
+		block.Statements = append(block.Statements, stmt)
+	}
+	return block
+}
+
+// parseCondition parsea la condición entre paréntesis de if, while y
+// do-while. Como en C++, los paréntesis son obligatorios.
+//
+//	Al entrar: curToken = 'if' o 'while'
+//	Al salir:  curToken = ')'
+//
+// Devuelve nil si hay un error.
+func (p *Parser) parseCondition() ast.Expression {
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	p.nextToken() // se salta el '(' → curToken = inicio de la condición
+
+	condition := p.parseExpression(LOWEST)
+	if condition == nil {
+		return nil
+	}
+
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+	return condition
+}
+
+// parseIfStatement parsea un condicional en cualquiera de sus formas:
+//
+//	if (<cond>) <cuerpo>
+//	if (<cond>) <cuerpo> else <cuerpo>
+//	if (<cond>) <cuerpo> else if (<cond>) <cuerpo> else <cuerpo>
+//
+//	Al entrar: curToken = 'if'
+//	Al salir:  curToken = último token del último cuerpo
+//
+// Cómo se representa el "else if": no hay un nodo especial ni código
+// especial. Después de 'else' se parsea un cuerpo con parseBody; si ese
+// cuerpo empieza con 'if', parseBody lo parsea como una sentencia if
+// normal (llamada recursiva a esta función) y lo envuelve en un bloque.
+// Es decir:
+//
+//	if (a) {1} else if (b) {2} else {3}
+//	    se convierte en
+//	if (a) {1} else { if (b) {2} else {3} }
+//
+// La recursión permite encadenar cualquier número de "else if".
+// Además, un 'else' siempre queda con el if más cercano que no tenga
+// else, igual que en C++: en  if (a) if (b) x; else y;  el else es del
+// if (b).
+func (p *Parser) parseIfStatement() ast.Statement {
+	stmt := &ast.IfExpression{Token: p.curToken}
+
+	// Condición: deja curToken en ')'.
+	stmt.Condition = p.parseCondition()
+	if stmt.Condition == nil {
+		return nil
+	}
+
+	// Cuerpo "entonces".
+	stmt.Consequence = p.parseBody()
+
+	// else opcional. Si no hay, Alternative queda en nil.
+	if p.peekTokenIs(token.ELSE) {
+		p.nextToken() // curToken = 'else'
+		stmt.Alternative = p.parseBody()
+	}
+
+	return stmt
+}
+
+// parseWhileStatement parsea un ciclo:   while (<cond>) <cuerpo>
+//
+//	Al entrar: curToken = 'while'
+//	Al salir:  curToken = último token del cuerpo
+func (p *Parser) parseWhileStatement() ast.Statement {
+	stmt := &ast.WhileExpression{Token: p.curToken}
+
+	stmt.Condition = p.parseCondition()
+	if stmt.Condition == nil {
+		return nil
+	}
+
+	stmt.Body = p.parseBody()
+	return stmt
+}
+
+// parseForStatement parsea un ciclo for de C++:
+//
+//		for (<inicio>; <condición>; <actualización>) <cuerpo>
+//		ej: for (int i = 0; i < 10; i++) { ... }
+//
+//	  - <inicio> es una SENTENCIA: una declaración (int i = 0) o una
+//	    expresión (i = 0); se ejecuta una vez.
+//	  - <condición> es una EXPRESIÓN; el ciclo sigue mientras sea verdadera.
+//	  - <actualización> es una EXPRESIÓN; se ejecuta al final de cada vuelta.
+//
+// Cualquiera de las tres partes puede omitirse, por ejemplo "for (;;) {}"
+// (en ese caso el campo correspondiente del nodo queda en nil).
+//
+//	Al entrar: curToken = 'for'
+//	Al salir:  curToken = último token del cuerpo
+func (p *Parser) parseForStatement() ast.Statement {
+	stmt := &ast.ForExpression{Token: p.curToken}
+
+	// for (
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	p.nextToken() // se salta el '(' → curToken = inicio de <inicio> o ';'
+
+	// 1. <inicio>. Si curToken ya es ';', se omitió.
+	//    parseDeclaration y parseExpressionStatement consumen el ';' final,
+	//    así que al volver curToken = ';'.
+	if !p.curTokenIs(token.SEMICOLON) {
+		if token.IsType(p.curToken.Type) || p.curTokenIs(token.CONST) {
+			stmt.Init = p.parseDeclaration()
+		} else {
+			stmt.Init = p.parseExpressionStatement()
+		}
+		if stmt.Init == nil {
+			return nil
+		}
+	}
+	p.nextToken() // se salta el primer ';' → curToken = inicio de <condición> o ';'
+
+	// 2. <condición>. Si curToken ya es ';', se omitió.
+	//    Aquí se usa parseExpression, que NO consume el ';', por eso se
+	//    exige con expectPeek.
+	if !p.curTokenIs(token.SEMICOLON) {
+		stmt.Condition = p.parseExpression(LOWEST)
+		if stmt.Condition == nil {
+			return nil
+		}
+		if !p.expectPeek(token.SEMICOLON) {
+			return nil
+		}
+	}
+	p.nextToken() // se salta el segundo ';' → curToken = inicio de <actualización> o ')'
+
+	// 3. <actualización>. Si curToken ya es ')', se omitió.
+	if !p.curTokenIs(token.RPAREN) {
+		stmt.Update = p.parseExpression(LOWEST)
+		if stmt.Update == nil {
+			return nil
+		}
+		if !p.expectPeek(token.RPAREN) {
+			return nil
+		}
+	}
+	// Aquí curToken = ')'.
+
+	// 4. Cuerpo.
+	stmt.Body = p.parseBody()
+	return stmt
+}
+
+// parseCoutStatement parsea la impresión en pantalla:
+//
+//	cout << <expr> << <expr> ... ;
+//	ej: cout << "Hola " << nombre << endl;
+//
+// Cada valor se parsea con precedencia SHIFT: así el parseo de un valor se
+// detiene al ver el siguiente "<<" (que tiene esa misma precedencia y no
+// es mayor), pero absorbe operadores más fuertes como + o *. Entonces
+// "cout << a + b << endl;" imprime a + b. Como en C++, para imprimir una
+// comparación hay que usar paréntesis: cout << (a < b);
+//
+//	Al entrar: curToken = 'cout'
+//	Al salir:  curToken = ';'
+func (p *Parser) parseCoutStatement() ast.Statement {
+	stmt := &ast.CoutStatement{Token: p.curToken}
+
+	// Debe haber al menos un "<<".
+	if !p.expectPeek(token.SHIFT_LEFT) {
+		return nil
+	}
+
+	for {
+		p.nextToken() // se salta el '<<' → curToken = inicio del valor
+		value := p.parseExpression(SHIFT)
+		if value == nil {
+			return nil
+		}
+		stmt.Values = append(stmt.Values, value)
+
+		if !p.peekTokenIs(token.SHIFT_LEFT) {
+			break
+		}
+		p.nextToken() // curToken = '<<'
+	}
+
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
+	return stmt
 }
 
 // ---------------------------------------------------------------------------
@@ -931,6 +1169,11 @@ func (p *Parser) parseStringLiteral() ast.Expression {
 // parseBoolean parsea true o false. El valor es true solo si el token es TRUE.
 func (p *Parser) parseBoolean() ast.Expression {
 	return &ast.Boolean{Token: p.curToken, Value: p.curTokenIs(token.TRUE)}
+}
+
+// parseEndl parsea la palabra endl (fin de línea), que se usa en cout.
+func (p *Parser) parseEndl() ast.Expression {
+	return &ast.EndlLiteral{Token: p.curToken}
 }
 
 // parsePrefixExpression parsea un operador prefijo:   -x   !x   ++x   --x
