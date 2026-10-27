@@ -1,0 +1,175 @@
+(* ==========================================================================
+   Gramática EBNF del subconjunto de C++ que reconoce el parser
+   (Persona 1: token, lexer, parser, ast)
+
+   Notación:  =  define una regla       ,  concatenación
+              |  alternativa            [ x ]  x es opcional
+              { x }  x se repite 0 o más veces
+              "x"  token literal        (* ... *)  comentario
+   A la derecha de cada regla se indica la función de parser/parser.go que
+   la implementa.
+   ========================================================================== *)
+
+
+(* --------------------------------------------------------------------------
+   1. Programa y sentencias
+   -------------------------------------------------------------------------- *)
+
+programa      = { sentencia } , EOF ;                     (* ParseProgram *)
+
+sentencia     = declaracion                               (* parseStatement *)
+              | sent_return
+              | sent_if
+              | sent_while
+              | sent_do_while
+              | sent_for
+              | sent_cout
+              | sent_salto
+              | bloque
+              | directiva_using
+              | sent_expresion
+              | ";" ;                                     (* sentencia vacía: no genera nodo *)
+
+bloque        = "{" , { sentencia } , "}" ;               (* parseBlockStatement *)
+
+sent_expresion = expresion , ";" ;                        (* parseExpressionStatement *)
+
+sent_return   = "return" , [ expresion ] , ";" ;          (* parseReturnStatement *)
+
+directiva_using = "using" , "namespace" , "std" , ";" ;   (* parseUsingDirective: no genera nodo *)
+
+(* #include <...> no aparece aquí: el LEXER descarta la línea completa.   *)
+
+
+(* --------------------------------------------------------------------------
+   2. Declaraciones (variables y funciones)
+   Las dos empiezan con "tipo IDENT"; el parser decide mirando si el token
+   siguiente es "(" (función) o no (variable).
+   -------------------------------------------------------------------------- *)
+
+declaracion   = [ "const" ] , tipo , IDENT ,              (* parseDeclaration *)
+                ( resto_funcion                           (*   si sigue "("  *)
+                | resto_variables ) ;                     (*   si no         *)
+
+resto_variables = resto_declarador ,
+                  { "," , IDENT , resto_declarador } , ";" ;
+                  (* 1 variable  → VarDeclaration
+                     2 o más     → VarDeclarationList *)
+
+resto_declarador = [ "[" , [ expresion ] , "]" ] ,        (* parseVarDeclarator *)
+                   [ "=" , ( expresion                    (*   variable simple *)
+                           | "{" , [ lista_expr ] , "}" ) ] ; (* solo arreglos *)
+
+resto_funcion = "(" , [ parametros ] , ")" ,              (* parseFunctionDeclaration *)
+                ( bloque                                  (*   definición *)
+                | ";" ) ;                                 (*   prototipo  *)
+
+parametros    = parametro , { "," , parametro } ;         (* parseParams *)
+parametro     = tipo_valor , [ IDENT ] , [ "[" , "]" ] ;
+
+tipo          = tipo_valor | "void" ;                     (* token.IsType *)
+tipo_valor    = "int" | "double" | "bool" | "string" ;
+
+(* Restricciones que el parser verifica aparte (no caben en la EBNF):
+   - una variable no puede ser void;  'const' solo en variables;
+   - const sin valor inicial es error;  int a[]; sin lista es error;
+   - "{...}" solo para arreglos; un arreglo solo se inicializa con "{...}";
+   - una función con cuerpo necesita el nombre de cada parámetro;
+   - una función solo se declara en el nivel superior (no dentro de un bloque). *)
+
+
+(* --------------------------------------------------------------------------
+   3. Estructuras de control
+   -------------------------------------------------------------------------- *)
+
+cuerpo        = bloque | sentencia ;                      (* parseBody: una sentencia
+                                                             sola se envuelve en un bloque *)
+
+condicion     = "(" , expresion , ")" ;                   (* parseCondition *)
+
+sent_if       = "if" , condicion , cuerpo ,               (* parseIfStatement *)
+                [ "else" , cuerpo ] ;
+                (* "else if" no es una regla aparte: es un else cuyo cuerpo
+                   es otra sent_if.  El else se une al if más cercano. *)
+
+sent_while    = "while" , condicion , cuerpo ;            (* parseWhileStatement *)
+
+sent_do_while = "do" , cuerpo , "while" , condicion , ";" ;  (* parseDoWhileStatement *)
+
+sent_for      = "for" , "(" ,                             (* parseForStatement *)
+                ( declaracion_var | sent_expresion | ";" ) ,  (* inicio (incluye su ";") *)
+                [ expresion ] , ";" ,                         (* condición *)
+                [ expresion ] , ")" ,                         (* actualización *)
+                cuerpo ;
+declaracion_var = [ "const" ] , tipo_valor , IDENT , resto_variables ;
+
+sent_salto    = ( "break" | "continue" ) , ";" ;          (* parseJumpStatement *)
+
+sent_cout     = "cout" , "<<" , expr_shift_operando ,     (* parseCoutStatement *)
+                { "<<" , expr_shift_operando } , ";" ;
+                (* cada valor se parsea con parseExpression(SHIFT): llega
+                   hasta el nivel "suma" y se detiene en el siguiente "<<" *)
+expr_shift_operando = suma ;
+
+
+(* --------------------------------------------------------------------------
+   4. Expresiones, por niveles de precedencia (de menor a mayor)
+   En el código NO hay una función por nivel: todos los niveles los
+   resuelve parseExpression(precedencia) con la tabla 'precedences'
+   (algoritmo de Pratt). Las reglas de abajo describen el resultado.
+   -------------------------------------------------------------------------- *)
+
+expresion     = asignacion ;                              (* parseExpression(LOWEST) *)
+
+asignacion    = o_logico , [ op_asig , asignacion ] ;     (* parseAssignExpression, ASSIGN *)
+                (* derecha: a = b = 3 → a = (b = 3).  El lado izquierdo
+                   debe ser IDENT o un acceso a[i] (isAssignable). *)
+op_asig       = "=" | "+=" | "-=" | "*=" | "/=" | "%=" ;
+
+o_logico      = y_logico , { "||" , y_logico } ;          (* parseInfixExpression, OR *)
+y_logico      = igualdad , { "&&" , igualdad } ;          (* parseInfixExpression, AND *)
+igualdad      = relacion , { ( "==" | "!=" ) , relacion } ;          (* EQUALS *)
+relacion      = shift , { ( "<" | ">" | "<=" | ">=" ) , shift } ;    (* LESSGREATER *)
+shift         = suma , { ( "<<" | ">>" ) , suma } ;                  (* SHIFT *)
+suma          = producto , { ( "+" | "-" ) , producto } ;            (* SUM *)
+producto      = unario , { ( "*" | "/" | "%" ) , unario } ;          (* PRODUCT *)
+
+unario        = ( "-" | "!" | "++" | "--" ) , unario      (* parsePrefixExpression, PREFIX *)
+              | postfijo ;
+
+postfijo      = primario , { "++"                         (* parsePostfixExpression *)
+                           | "--"
+                           | "(" , [ lista_expr ] , ")"   (* parseCallExpression *)
+                           | "[" , expresion , "]"        (* parseIndexExpression *)
+                           | "." , IDENT } ;              (* parseMemberExpression; POSTFIX *)
+
+primario      = IDENT                                     (* parseIdentifier *)
+              | INT                                       (* parseIntegerLiteral *)
+              | DOUBLE                                    (* parseDoubleLiteral *)
+              | STRING                                    (* parseStringLiteral *)
+              | "true" | "false"                          (* parseBoolean *)
+              | "endl"                                    (* parseEndl *)
+              | "(" , expresion , ")" ;                   (* parseGroupedExpression *)
+
+lista_expr    = expresion , { "," , expresion } ;         (* parseExpressionList *)
+
+
+(* --------------------------------------------------------------------------
+   5. Tokens (los reconoce lexer/lexer.go)
+   -------------------------------------------------------------------------- *)
+
+IDENT   = letra , { letra | digito } ;                    (* readIdentifier *)
+INT     = digito , { digito } ;                           (* readNumber *)
+DOUBLE  = digito , { digito } , "." , digito , { digito } ;  (* readNumber *)
+STRING  = '"' , { caracter | escape } , '"' ;             (* readString; sin saltos de línea *)
+escape  = "\" , ( "n" | "t" | '"' | "\" ) ;
+letra   = "a".."z" | "A".."Z" | "_" ;
+digito  = "0".."9" ;
+
+(* Se ignoran: espacios, tabulaciones, saltos de línea (skipWhitespace),
+   comentarios "// ..." hasta el fin de línea (skipLine),
+   comentarios "/* ... */" (skipBlockComment) y
+   líneas que empiezan con "#" (skipLine).
+   Palabras reservadas (token.keywords): int double bool string void true
+   false if else while do for return break continue const cout endl using
+   namespace std. *)
