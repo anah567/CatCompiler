@@ -482,6 +482,53 @@ func TestCout(t *testing.T) {
 	})
 }
 
+// TestOpcionales revisa las construcciones opcionales: do-while, break,
+// continue y llamadas a método con punto.
+func TestOpcionales(t *testing.T) {
+	t.Run("do-while", func(t *testing.T) {
+		stmt := onlyStatement(t, "do { x--; } while (x > 0);").(*ast.DoWhileStatement)
+		if stmt.Body.String() != "{ (x--); }" || stmt.Condition.String() != "(x > 0)" {
+			t.Fatalf("do-while mal formado: %s", stmt.String())
+		}
+	})
+	t.Run("break y continue", func(t *testing.T) {
+		stmt := onlyStatement(t,
+			"while (true) { if (a) break; if (b) continue; }").(*ast.WhileExpression)
+		first := stmt.Body.Statements[0].(*ast.IfExpression).Consequence.Statements[0]
+		second := stmt.Body.Statements[1].(*ast.IfExpression).Consequence.Statements[0]
+		if _, ok := first.(*ast.BreakStatement); !ok {
+			t.Fatalf("se esperaba BreakStatement, es %T", first)
+		}
+		if _, ok := second.(*ast.ContinueStatement); !ok {
+			t.Fatalf("se esperaba ContinueStatement, es %T", second)
+		}
+	})
+	t.Run("llamada a método", func(t *testing.T) {
+		stmt := onlyStatement(t, "n = s.size();").(*ast.ExpressionStatement)
+		call := stmt.Expression.(*ast.AssignExpression).Value.(*ast.CallExpression)
+		member, ok := call.Function.(*ast.MemberExpression)
+		if !ok || member.Object.String() != "s" || member.Member.Value != "size" {
+			t.Fatalf("se esperaba s.size como MemberExpression, es %#v", call.Function)
+		}
+	})
+
+	precedence := []struct {
+		input string
+		want  string
+	}{
+		{"s.size() + 1;", "(s.size() + 1);"},
+		{"-s.size();", "(-s.size());"},
+		{"a.b.c;", "a.b.c;"},
+	}
+	for _, tt := range precedence {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := parseOK(t, tt.input).String(); got != tt.want {
+				t.Fatalf("se esperaba %s, se obtuvo %s", tt.want, got)
+			}
+		})
+	}
+}
+
 // TestProgramaDeReferencia parsea el programa completo de ejemplo y revisa
 // su estructura principal.
 func TestProgramaDeReferencia(t *testing.T) {
@@ -699,6 +746,26 @@ func TestErrores(t *testing.T) {
 			want:  []string{"Error sintáctico [línea 4, columna 2]: falta '}' para cerrar el bloque abierto en la línea 1"},
 		},
 		{
+			name:  "do-while sin ';'",
+			input: "do { x--; } while (x > 0)",
+			want:  []string{"Error sintáctico [línea 1, columna 26]: se esperaba ';' pero se encontró el fin del archivo"},
+		},
+		{
+			name:  "do sin while",
+			input: "do { x--; }",
+			want:  []string{"Error sintáctico [línea 1, columna 12]: se esperaba 'while' pero se encontró el fin del archivo"},
+		},
+		{
+			name:  "break sin ';'",
+			input: "while (x) { break }",
+			want:  []string{"Error sintáctico [línea 1, columna 19]: se esperaba ';' pero se encontró '}'"},
+		},
+		{
+			name:  "punto sin miembro",
+			input: "s.;",
+			want:  []string{"Error sintáctico [línea 1, columna 3]: se esperaba un identificador pero se encontró ';'"},
+		},
+		{
 			// Dos sentencias con error separadas por una correcta: se
 			// reportan las dos, pero ninguna "en cascada".
 			name:  "varios errores sin cascada",
@@ -719,4 +786,47 @@ func TestErrores(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEntradasRotas revisa que entradas mal formadas produzcan al menos un
+// error y que el parser no entre en pánico ni en un ciclo infinito.
+func TestEntradasRotas(t *testing.T) {
+	inputs := []string{
+		")", "}", "{", "int", "const", "const x = 1;", "int x = {1, 2};",
+		"int a[3] = 5;", "int a[3] = {1, 2;", "for (", "for (int i = 0;", "if (",
+		"cout <<", "x = = 3;", "f(1,", "a[", "((((", "int f(int a,) {}",
+		"int main() { return 0 }", "} } }", "else else", "do while;",
+		"int a = 1, ;", "s.size(;", "return", "\"sin cerrar", "/* sin cerrar",
+	}
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			p := New(lexer.New(input))
+			p.ParseProgram()
+			if len(p.Errors()) == 0 {
+				t.Fatalf("se esperaba al menos un error para %q", input)
+			}
+		})
+	}
+}
+
+// FuzzParser le pasa al parser entradas generadas al azar a partir de las
+// semillas. Solo revisa que no entre en pánico. Se ejecuta con:
+//
+//	go test ./parser -fuzz=FuzzParser -fuzztime=30s
+//
+// (con "go test" normal solo se prueban las semillas).
+func FuzzParser(f *testing.F) {
+	seeds := []string{
+		"int x = 1 + 2 * 3;",
+		"int f(int a) { if (a) { return 1; } else if (!a) return 2; return 0; }",
+		"for (int i = 0; i < 3; i++) { cout << arr[i] << endl; }",
+		"do { x--; } while (x > 0);",
+		"int a[3] = {1, 2, 3}; a[0] += s.size();",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		New(lexer.New(input)).ParseProgram()
+	})
 }

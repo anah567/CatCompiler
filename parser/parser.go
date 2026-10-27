@@ -72,7 +72,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // Niveles de precedencia, de MENOR a MAYOR, iguales a los de C++.
-// iota asigna números consecutivos: LOWEST = 1, ASSIGN = 2, ... POSTFIX = 12.
+// iota asigna números consecutivos: LOWEST = 1, ASSIGN = 2, ... POSTFIX = 11.
 // (El '_' descarta el valor 0.)
 //
 // Un operador con mayor precedencia se agrupa primero. Por ejemplo, como
@@ -89,7 +89,7 @@ const (
 	SUM             // +  -
 	PRODUCT         // *  /  %
 	PREFIX          // -x  !x  ++x  --x        (operadores prefijos)
-	POSTFIX         // x++  x--  f(x)  a[i]    (la más alta de todas)
+	POSTFIX         // x++  x--  f(x)  a[i]  s.m  (la más alta de todas)
 )
 
 // precedences asocia cada token que puede ir DESPUÉS de una expresión
@@ -125,6 +125,7 @@ var precedences = map[token.TokenType]int{
 	token.DECREMENT:       POSTFIX,
 	token.LPAREN:          POSTFIX,
 	token.LBRACKET:        POSTFIX,
+	token.DOT:             POSTFIX,
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +207,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.DECREMENT, p.parsePostfixExpression) // i--
 	p.registerInfix(token.LPAREN, p.parseCallExpression)       // f(a, b)
 	p.registerInfix(token.LBRACKET, p.parseIndexExpression)    // a[i]
+	p.registerInfix(token.DOT, p.parseMemberExpression)        // s.size
 
 	// Se leen dos tokens para que curToken y peekToken queden inicializados.
 	// Tras la primera llamada: cur = (vacío), peek = token 1.
@@ -416,7 +418,8 @@ func (p *Parser) ParseProgram() *ast.Program {
 // actual:
 //   - un tipo o 'const' → declaración de variable o función (int x = 5;)
 //   - 'return'          → retorno (return x;)
-//   - 'if', 'while', 'for' → estructuras de control
+//   - 'if', 'while', 'for', 'do' → estructuras de control
+//   - 'break', 'continue' → saltos dentro de un ciclo
 //   - 'cout'            → impresión (cout << x << endl;)
 //   - '{'               → bloque suelto (abre un ámbito nuevo)
 //   - 'using'           → using namespace std; (se acepta y se ignora)
@@ -443,6 +446,12 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseWhileStatement()
 	case token.FOR:
 		return p.parseForStatement()
+	case token.DO:
+		return p.parseDoWhileStatement()
+	case token.BREAK:
+		return p.parseJumpStatement(&ast.BreakStatement{Token: p.curToken})
+	case token.CONTINUE:
+		return p.parseJumpStatement(&ast.ContinueStatement{Token: p.curToken})
 	case token.COUT:
 		return p.parseCoutStatement()
 	case token.LBRACE:
@@ -675,13 +684,13 @@ func (p *Parser) parseWhileStatement() ast.Statement {
 
 // parseForStatement parsea un ciclo for de C++:
 //
-//		for (<inicio>; <condición>; <actualización>) <cuerpo>
-//		ej: for (int i = 0; i < 10; i++) { ... }
+//	for (<inicio>; <condición>; <actualización>) <cuerpo>
+//	ej: for (int i = 0; i < 10; i++) { ... }
 //
-//	  - <inicio> es una SENTENCIA: una declaración (int i = 0) o una
-//	    expresión (i = 0); se ejecuta una vez.
-//	  - <condición> es una EXPRESIÓN; el ciclo sigue mientras sea verdadera.
-//	  - <actualización> es una EXPRESIÓN; se ejecuta al final de cada vuelta.
+// El <inicio> es una SENTENCIA: una declaración (int i = 0) o una
+// expresión (i = 0); se ejecuta una vez. La <condición> es una EXPRESIÓN:
+// el ciclo sigue mientras sea verdadera. La <actualización> es una
+// EXPRESIÓN que se ejecuta al final de cada vuelta.
 //
 // Cualquiera de las tres partes puede omitirse, por ejemplo "for (;;) {}"
 // (en ese caso el campo correspondiente del nodo queda en nil).
@@ -740,6 +749,46 @@ func (p *Parser) parseForStatement() ast.Statement {
 
 	// 4. Cuerpo.
 	stmt.Body = p.parseBody()
+	return stmt
+}
+
+// parseDoWhileStatement parsea un ciclo que se ejecuta al menos una vez:
+//
+//	do <cuerpo> while (<cond>);
+//	ej: do { x--; } while (x > 0);
+//
+//	Al entrar: curToken = 'do'
+//	Al salir:  curToken = ';'
+func (p *Parser) parseDoWhileStatement() ast.Statement {
+	stmt := &ast.DoWhileStatement{Token: p.curToken}
+
+	stmt.Body = p.parseBody()
+
+	if !p.expectPeek(token.WHILE) {
+		return nil
+	}
+	stmt.Condition = p.parseCondition()
+	if stmt.Condition == nil {
+		return nil
+	}
+
+	// A diferencia del while normal, el do-while termina en ';'.
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
+	return stmt
+}
+
+// parseJumpStatement termina de parsear  break;  o  continue;  (el nodo
+// ya viene creado; solo falta exigir el ';'). El parser NO revisa que
+// estén dentro de un ciclo: eso lo detecta el evaluador.
+//
+//	Al entrar: curToken = 'break' o 'continue'
+//	Al salir:  curToken = ';'
+func (p *Parser) parseJumpStatement(stmt ast.Statement) ast.Statement {
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
 	return stmt
 }
 
@@ -1357,6 +1406,23 @@ func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {
 	if !p.expectPeek(token.RBRACKET) {
 		return nil
 	}
+
+	return exp
+}
+
+// parseMemberExpression parsea el acceso a un miembro con punto:   s.size
+// Como '.' tiene precedencia POSTFIX (igual que la llamada), en s.size()
+// primero se arma s.size y luego el '(' lo convierte en una llamada.
+//
+//	Al entrar: curToken = '.'; 'left' = el objeto
+//	Al salir:  curToken = el nombre del miembro
+func (p *Parser) parseMemberExpression(left ast.Expression) ast.Expression {
+	exp := &ast.MemberExpression{Token: p.curToken, Object: left}
+
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	exp.Member = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 
 	return exp
 }
