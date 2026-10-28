@@ -106,7 +106,7 @@ Las llamadas a funciones, el acceso a arreglos, los métodos integrados y otras 
 
 **Funciones integradas:** se implementaron `to_string`, `stoi`, `stod`, `abs`, `max`, `min`, `pow` y `sqrt`, además de los métodos `.size()`, `.length()` y `.push_back()`.
 
-**Salida:** `cout` utiliza un `io.Writer` para mostrar resultados y permitir capturarlos en las pruebas.
+**Salida:** `cout` utiliza un `io.Writer` para mostrar resultados y permitir capturarlos en las pruebas. Los booleanos se imprimen como `1` y `0`.
 
 **Errores:** se detectan errores léxicos y sintácticos con línea y columna, así como errores de ejecución por variables no declaradas, argumentos incorrectos, índices inválidos y recursión excesiva.
 
@@ -117,7 +117,6 @@ CatCompiler no implementa el estándar completo de C++. Sus principales limitaci
 - No admite `vector`, entrada mediante `cin` ni matrices multidimensionales como `int m[2][2]`.
 - No implementa de forma general clases, herencia, plantillas ni punteros.
 - Solo incorpora un conjunto reducido de funciones de la biblioteca estándar.
-- La impresión de booleanos mediante `cout` puede diferir de C++ convencional.
 - Los errores de ejecución no siempre incluyen línea y columna.
 - La protección frente a recursión excesiva utiliza un límite interno de llamadas.
 

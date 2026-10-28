@@ -270,7 +270,6 @@ Entre sus limitaciones conocidas se encuentran:
 - No implementa `vector` de la biblioteca estándar de C++.
 - No implementa entrada de datos mediante `cin`.
 - No admite matrices multidimensionales como `int m[2][2]`.
-- La salida de valores booleanos mediante `cout` puede diferir de la salida habitual de C++.
 - Los errores de ejecución no siempre incluyen línea y columna.
 - Las funciones integradas representan únicamente un conjunto reducido de operaciones.
 - La protección contra recursión excesiva utiliza un límite interno de llamadas, no un manejo completo de la pila de ejecución de C++.
