@@ -1,163 +1,221 @@
 # CatCompiler
 
-CatCompiler es un proyecto educativo en Go para analizar y ejecutar un lenguaje pequeño. Incluye un analizador léxico (*lexer*), un analizador sintáctico (*parser*), objetos de ejecución y un evaluador. El REPL permite ver tokens, ver el árbol de sintaxis abstracta (AST) o ejecutar código.
+CatCompiler es un intérprete educativo desarrollado en Go que permite analizar y ejecutar un subconjunto del lenguaje C++.
 
-## Requisitos
+El proyecto incluye un analizador léxico (Lexer), un analizador sintáctico (Parser), un árbol de sintaxis abstracta (AST), un evaluador (Evaluator) y una interfaz interactiva de consola (REPL).
 
-- Go 1.26.3 o una versión compatible con la indicada en `go.mod`.
-- No requiere dependencias externas.
+## 1. Requisitos
 
-## Inicio rápido
+- Go, en una versión compatible con `go.mod`.
+- Una terminal para ejecutar los comandos.
+- No se requieren dependencias externas adicionales para las funcionalidades descritas.
 
-Desde la raíz del proyecto:
+## 2. Ejecución
+
+Desde la carpeta principal del proyecto:
 
 ```bash
 go run .
 ```
 
-Al iniciar, elige `1` para ver los tokens, `2` para ver el AST o `3` para ejecutar código. Luego escribe una línea y presiona Enter. En modo evaluador, las variables persisten entre líneas de la misma sesión.
+Este comando inicia el REPL de CatCompiler, que permite seleccionar entre tres modos:
 
-Por ejemplo, en modo parser:
+1. **Lexer:** muestra los tokens del código.
+2. **Parser:** muestra la estructura del AST.
+3. **Evaluator:** ejecuta las instrucciones.
+
+También se puede ejecutar directamente un archivo `.cpp`:
+
+```bash
+go run . examples/variables.cpp
+```
+
+Cuando el archivo contiene una función `main()`, el intérprete la ejecuta automáticamente.
+
+## 3. Modos del REPL
+
+### Lexer
+
+Convierte el código fuente en tokens, identificando su tipo, contenido, línea y columna.
+
+Ejemplo:
+
+```cpp
+int edad = 20;
+```
+
+El resultado incluye los tokens correspondientes al tipo `int`, el identificador `edad`, el operador `=`, el número `20` y el punto y coma.
+
+### Parser
+
+Recibe los tokens del lexer y construye el árbol de sintaxis abstracta (AST).
+
+Ejemplo:
+
+```cpp
+int edad = 20;
+```
+
+Representación simplificada:
 
 ```text
-Opción: 2
-parser>> let x = 1 + 2 * 3;
-Programa:
-  let x = (1 + (2 * 3));
-AST:
 Program
-└── LetStatement x
-    └── Valor: InfixExpression +
-        ├── Izquierda: IntegerLiteral 1
-        └── Derecha: InfixExpression *
-            ├── Izquierda: IntegerLiteral 2
-            └── Derecha: IntegerLiteral 3
+└── VarDeclaration int edad
+    └── Valor: IntegerLiteral 20
 ```
 
-En modo lexer, la misma línea muestra cada token con su tipo y literal. Los errores de sintaxis se muestran en modo parser.
+### Evaluator
 
-En modo evaluador:
+Recorre el AST y ejecuta las instrucciones.
+
+Ejemplo:
+
+```cpp
+int numero = 10;
+cout << numero * 2 << endl;
+```
+
+Salida:
 
 ```text
-Opción: 3
-evaluator>> let doble = function(x) { x * 2 };
-null
-evaluator>> doble(7)
-14
-evaluator>> let a = [1, 2]; a[0] = 9; a[0]
-9
+20
 ```
 
-`null` indica que una declaración no produce un resultado. Los índices de lectura inexistentes también devuelven `null`; escribir fuera de un arreglo produce un error.
+El REPL puede mostrar `null` después de instrucciones que no producen un valor de resultado.
 
-### Ejemplos para copiar y pegar en el REPL
+## 4. Comandos del REPL
 
-Ejecuta `go run .`, elige `3` y pega **una línea por vez**. El REPL conserva las variables de las líneas anteriores:
+| Comando | Función |
+|---|---|
+| `:lexer` | Cambia al modo Lexer |
+| `:parser` | Cambia al modo Parser |
+| `:evaluator` | Cambia al modo Evaluator |
+| `:cargar archivo.cpp` | Ejecuta un archivo `.cpp` en el entorno actual |
+| `:ayuda` | Muestra los comandos disponibles |
+| `:salir` | Finaliza el REPL |
+
+Ejemplo:
 
 ```text
-let base = 10;
-base + 5
-let doble = function(x) { return x * 2; };
-doble(base)
-let valores = [3, 6, 9];
-valores[1]
-valores[1] = 8;
-valores[1]
-if (base > 5) { "mayor" } else { "menor" }
-let total = 0; for (let i = 0; i < 3; i = i + 1) { total = total + valores[i]; } total
+:cargar examples/funciones.cpp
 ```
 
-En orden, las expresiones muestran `15`, `20`, `6`, `8`, `8`, `mayor` y `20`. Las líneas que solo declaran variables muestran `null`. Para empezar de cero, cierra el REPL y ejecútalo de nuevo.
+## 5. Funcionalidades implementadas
 
-### Ejecutar un archivo `.ssg`
+Entre las funcionalidades implementadas y comprobadas se encuentran:
 
-El único archivo de ejemplos, [ejemplos/programa.ssg](ejemplos/programa.ssg), reúne el programa básico y las funciones recursivas de Ackermann, Fibonacci y Torres de Hanói. Desde la raíz del proyecto puedes ejecutarlo directamente:
+- Declaraciones de variables tipadas.
+- Tipos `int`, `double`, `bool` y `string`.
+- Operaciones aritméticas y comparaciones.
+- Operadores lógicos con evaluación de cortocircuito.
+- Condicionales `if`, `else if` y `else`.
+- Ciclos `for` y `while`.
+- Funciones con parámetros y tipos de retorno.
+- Funciones recursivas.
+- Arreglos e indexación.
+- Operadores de asignación e incremento.
+- Salida por pantalla mediante `cout` y `endl`.
+- Detección de errores de sintaxis y de ejecución.
+- Ejecución automática de `main()` al cargar archivos `.cpp`.
+
+El proyecto implementa un subconjunto educativo de C++, no el lenguaje C++ completo.
+
+## 6. Ejemplos
+
+La carpeta `examples/` contiene programas para demostrar las funcionalidades del intérprete.
+
+### Variables
 
 ```bash
-go run . ejemplos/programa.ssg
+go run . examples/variables.cpp
 ```
 
-La salida es un hash con los cuatro resultados: `resultado: 24`, `ackermann: 7`, `fibonacci: 21` y `hanoi` con siete movimientos. También puedes cargarlo durante una sesión del REPL, desde cualquier modo:
+Muestra los valores de variables de diferentes tipos.
 
-```text
-:cargar ejemplos/programa.ssg
-```
-
-Después de cargarlo, cambia a `:evaluator` si hace falta y prueba `resultado`, `ackermann(2, 2)`, `fibonacci(8)` o `hanoi(3, "A", "C", "B")`. Todas las funciones quedan disponibles en la sesión. La ruta se interpreta desde el directorio donde ejecutaste `go run .`. Los archivos `.ssg` admiten bloques y funciones repartidos en varias líneas; el REPL interactivo procesa cada línea por separado. El lenguaje todavía no admite comentarios dentro de `.ssg`.
-
-### Funciones recursivas
-
-Estas funciones se llaman a sí mismas. Ya están juntas en `ejemplos/programa.ssg`. Si prefieres escribirlas directamente en el REPL, elige el modo `3` y pega **cada definición completa en una sola línea**; luego pega su llamada.
-
-**Ackermann** (a veces escrita «Ackerman»; `ackermann(2, 2)` produce `7`):
-
-```text
-let ackermann = function(m, n) { if (m == 0) { return n + 1; } if (n == 0) { return ackermann(m - 1, 1); } return ackermann(m - 1, ackermann(m, n - 1)); };
-ackermann(2, 2)
-```
-
-**Fibonacci** (`fibonacci(8)` produce `21`):
-
-```text
-let fibonacci = function(n) { if (n <= 1) { return n; } return fibonacci(n - 1) + fibonacci(n - 2); };
-fibonacci(8)
-```
-
-**Torres de Hanói** (`hanoi(3, "A", "C", "B")` devuelve los siete movimientos necesarios para llevar los discos de A a C, usando B como auxiliar):
-
-```text
-let hanoi = function(n, origen, destino, auxiliar) { if (n == 0) { return []; } return hanoi(n - 1, origen, auxiliar, destino) + [[origen, destino]] + hanoi(n - 1, auxiliar, destino, origen); };
-hanoi(3, "A", "C", "B")
-```
-
-Cada par del resultado es `[origen, destino]`; el primero es `[A, C]` y el último también. Aquí `+` une dos arreglos y crea uno nuevo, por lo que se pueden combinar los movimientos de cada llamada recursiva.
-
-Usa entradas pequeñas con Ackermann: el número de llamadas crece muy rápido.
-
-### Comandos del REPL
-
-| Comando | Acción |
-| --- | --- |
-| `:lexer` | Cambia al modo de tokens. |
-| `:parser` | Cambia al modo de AST. |
-| `:evaluator` | Cambia al modo de ejecución. |
-| `:cargar ruta.ssg` | Lee y ejecuta un archivo en el entorno actual. |
-| `:ayuda` | Muestra los comandos disponibles. |
-| `:salir` | Cierra el REPL. |
-
-También puedes salir con Ctrl+D.
-
-## Sintaxis reconocida
-
-- Declaraciones `let`, `return` y expresiones.
-- Enteros, cadenas entre comillas dobles, booleanos, identificadores, arreglos y hashes.
-- Operadores aritméticos (`+`, `-`, `*`, `/`, `%`, `**`), de comparación (`==`, `!=`, `<`, `>`, `<=`, `>=`), asignación (`=`) y prefijos (`-`, `!`). `+` también concatena cadenas o arreglos del mismo tipo.
-- Condicionales `if`, `elif` y `else`; ciclos `while` y `for`.
-- Funciones con `function`, llamadas e indexación con `[]`.
-
-El evaluador soporta expresiones, variables, asignación, condicionales, ciclos, funciones con cierres, arreglos y hashes. Solo `false` y `null` se consideran falsos. Los hashes admiten claves enteras, booleanas o de texto. El lexer reconoce identificadores con letras ASCII y guion bajo; los dígitos se usan para números enteros.
-
-## Estructura
-
-| Ruta | Función |
-| --- | --- |
-| `main.go` | Inicia la aplicación y el REPL. |
-| `token/` | Define los tipos de token y las palabras reservadas. |
-| `lexer/` | Convierte texto fuente en tokens. |
-| `parser/` | Construye el AST mediante un parser de Pratt. |
-| `ast/` | Define los nodos del árbol sintáctico. |
-| `objects/objects.go` | Define los valores durante la ejecución y los entornos de variables. |
-| `evaluator/evaluator.go` | Recorre el AST y calcula sus resultados. |
-| `repl/` | Gestiona la entrada interactiva y muestra tokens, AST o resultados. |
-| `ejemplos/programa.ssg` | Todos los ejemplos en un único programa ejecutable. |
-
-## Desarrollo
-
-Para compilar y revisar los paquetes:
+### Ciclos
 
 ```bash
-go build ./...
+go run . examples/ciclos.cpp
+```
+
+Salida:
+
+```text
+Suma: 15
+Contador: 0
+Contador: 1
+Contador: 2
+```
+
+### Funciones
+
+```bash
+go run . examples/funciones.cpp
+```
+
+Salida:
+
+```text
+Factorial de 5: 120
+```
+
+## 7. Estructura del proyecto
+
+| Ruta | Responsabilidad |
+|---|---|
+| `main.go` | Inicia el REPL o ejecuta archivos `.cpp` |
+| `token/` | Define los tipos de tokens |
+| `lexer/` | Analiza el código fuente y genera tokens |
+| `parser/` | Construye el AST |
+| `ast/` | Define los nodos del árbol sintáctico |
+| `objects/` | Define los objetos de ejecución y los entornos |
+| `evaluator/` | Ejecuta las instrucciones representadas en el AST |
+| `repl/` | Implementa los modos interactivos y la ejecución de archivos |
+| `examples/` | Contiene programas `.cpp` de demostración |
+| `docs/` | Contiene documentación técnica y la gramática del proyecto |
+
+## 8. Pruebas
+
+Para ejecutar todas las pruebas automáticas:
+
+```bash
 go test ./...
 ```
 
-`go test ./...` comprueba las operaciones, el control de flujo, las funciones, las colecciones y los errores del evaluador.
+Para ver los resultados detallados de las pruebas de integración:
+
+```bash
+go test ./repl -v
+```
+
+Las pruebas verifican funcionalidades del lexer, parser y evaluador, además de la ejecución de programas completos.
+
+Entre los casos de integración comprobados están:
+
+- Ejecución de `main()`.
+- Captura de la salida de `cout`.
+- Funciones con parámetros.
+- Recursividad.
+- Ciclos `for`.
+- Arreglos.
+- Condicionales.
+- Errores de sintaxis.
+- Variables no declaradas.
+- Cantidad incorrecta de argumentos.
+- Validación de archivos `.cpp`.
+
+Para compilar los paquetes:
+
+```bash
+go build ./...
+```
+
+## 9. Documentación adicional
+
+La carpeta `docs/` contiene documentación sobre el AST, decisiones de implementación, la gramática del lenguaje y material de estudio.
+
+## 10. Alcance
+
+CatCompiler es un proyecto académico cuyo propósito es demostrar las fases principales de un intérprete: análisis léxico, análisis sintáctico y evaluación.
+
+No pretende implementar todas las características del estándar C++.

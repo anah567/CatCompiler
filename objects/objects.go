@@ -7,6 +7,8 @@ package objects
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"polaobesahermosa/ast"
@@ -17,6 +19,7 @@ type ObjectType string
 
 const (
 	INTEGER_OBJ      ObjectType = "INTEGER"
+	DOUBLE_OBJ       ObjectType = "DOUBLE"
 	BOOLEAN_OBJ      ObjectType = "BOOLEAN"
 	STRING_OBJ       ObjectType = "STRING"
 	NULL_OBJ         ObjectType = "NULL"
@@ -25,6 +28,8 @@ const (
 	FUNCTION_OBJ     ObjectType = "FUNCTION"
 	ARRAY_OBJ        ObjectType = "ARRAY"
 	HASH_OBJ         ObjectType = "HASH"
+	BREAK_OBJ        ObjectType = "BREAK"
+	CONTINUE_OBJ     ObjectType = "CONTINUE"
 )
 
 // Object es la interfaz común de todos los valores del intérprete.
@@ -40,6 +45,12 @@ type Integer struct{ Value int64 }
 func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
 func (i *Integer) Inspect() string  { return fmt.Sprintf("%d", i.Value) }
 
+// Double guarda números decimales de 64 bits.
+type Double struct{ Value float64 }
+
+func (d *Double) Type() ObjectType { return DOUBLE_OBJ }
+func (d *Double) Inspect() string  { return fmt.Sprintf("%g", d.Value) }
+
 // Boolean guarda un valor lógico. Se reutilizan True y False para evitar
 // crear otro objeto cada vez que se evalúa una comparación.
 type Boolean struct{ Value bool }
@@ -50,6 +61,7 @@ func (b *Boolean) Inspect() string  { return fmt.Sprintf("%t", b.Value) }
 var (
 	True  = &Boolean{Value: true}
 	False = &Boolean{Value: false}
+
 	// Null representa ausencia de valor: un if sin rama ejecutada, un índice
 	// fuera del arreglo o una sentencia let, entre otros casos.
 	Null = &NullObject{}
@@ -82,19 +94,20 @@ type Error struct{ Message string }
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
 func (e *Error) Inspect() string  { return "ERROR: " + e.Message }
 
-// Function conserva tanto el cuerpo sin ejecutar como el entorno donde se
-// definió. Ese entorno capturado permite que las funciones sean cierres:
-// function(x) { function(y) { x + y } } recuerda x al retornar.
-// También permite recursión: el entorno se comparte por puntero y, después
-// de ejecutar `let fibonacci = function(...) {...}`, ese mismo entorno ya
-// contiene el nombre fibonacci cuando el cuerpo se llama a sí mismo.
+// Function conserva la información de una función de C++.
+// Guarda los tipos de los parámetros, el tipo de retorno,
+// el cuerpo y el entorno donde se declaró.
+// Esto permite validar llamadas y ejecutar funciones recursivas.
 type Function struct {
 	Parameters []*ast.Identifier
+	Params     []ast.Param
+	ReturnType string
 	Body       *ast.BlockStatement
 	Env        *Environment
 }
 
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
+
 func (f *Function) Inspect() string {
 	params := make([]string, len(f.Parameters))
 	for i, p := range f.Parameters {
@@ -107,6 +120,7 @@ func (f *Function) Inspect() string {
 type Array struct{ Elements []Object }
 
 func (a *Array) Type() ObjectType { return ARRAY_OBJ }
+
 func (a *Array) Inspect() string {
 	parts := make([]string, len(a.Elements))
 	for i, element := range a.Elements {
@@ -148,6 +162,7 @@ type Hash struct {
 }
 
 func (h *Hash) Type() ObjectType { return HASH_OBJ }
+
 func (h *Hash) Inspect() string {
 	parts := make([]string, 0, len(h.Order))
 	for _, key := range h.Order {
@@ -173,16 +188,53 @@ func (h *Hash) Put(key Hashable, value Object) {
 // función que creó este entorno, de modo que una llamada encuentra primero
 // sus parámetros y luego las variables visibles al definirse.
 type Environment struct {
-	store map[string]Object
-	outer *Environment
+	store     map[string]Object
+	outer     *Environment
+	varTypes  map[string]string
+	constants map[string]bool
+
+	// Destino donde se imprime la salida de cout.
+	output io.Writer
 }
 
 // NewEnvironment crea el ámbito principal del programa o del REPL.
-func NewEnvironment() *Environment { return &Environment{store: make(map[string]Object)} }
+func NewEnvironment() *Environment {
+	return &Environment{
+		store:     make(map[string]Object),
+		varTypes:  make(map[string]string),
+		constants: make(map[string]bool),
+	}
+}
 
 // NewEnclosedEnvironment crea un ámbito local conectado con otro.
 func NewEnclosedEnvironment(outer *Environment) *Environment {
-	return &Environment{store: make(map[string]Object), outer: outer}
+	return &Environment{
+		store:     make(map[string]Object),
+		outer:     outer,
+		varTypes:  make(map[string]string),
+		constants: make(map[string]bool),
+	}
+}
+
+// SetOutput establece dónde se mostrará la salida del programa.
+// Por ejemplo, puede ser la terminal o un buffer para las pruebas.
+func (e *Environment) SetOutput(out io.Writer) {
+	e.output = out
+}
+
+// Output devuelve el destino de impresión del programa.
+// Si el ámbito actual no tiene uno, lo busca en el ámbito exterior.
+// Si no existe ninguno, utiliza la terminal.
+func (e *Environment) Output() io.Writer {
+	if e.output != nil {
+		return e.output
+	}
+
+	if e.outer != nil {
+		return e.outer.Output()
+	}
+
+	return os.Stdout
 }
 
 // Get busca primero aquí y, si hace falta, sigue por los ámbitos exteriores.
@@ -212,6 +264,54 @@ func (e *Environment) Assign(name string, value Object) bool {
 	}
 	if e.outer != nil {
 		return e.outer.Assign(name, value)
+	}
+	return false
+}
+
+// BreakSignal y ContinueSignal controlan la ejecución de los ciclos.
+type BreakSignal struct{}
+
+func (*BreakSignal) Type() ObjectType { return BREAK_OBJ }
+func (*BreakSignal) Inspect() string  { return "break" }
+
+type ContinueSignal struct{}
+
+func (*ContinueSignal) Type() ObjectType { return CONTINUE_OBJ }
+func (*ContinueSignal) Inspect() string  { return "continue" }
+
+// Declare registra una variable tipada en el ámbito actual.
+func (e *Environment) Declare(name string, value Object, typ string, constant bool) bool {
+	if _, ok := e.store[name]; ok {
+		return false
+	}
+	e.store[name] = value
+	e.varTypes[name] = typ
+	e.constants[name] = constant
+	return true
+}
+
+// GetVariableInfo consulta los datos de una variable visible.
+func (e *Environment) GetVariableInfo(name string) (string, bool, bool) {
+	if _, ok := e.store[name]; ok {
+		return e.varTypes[name], e.constants[name], true
+	}
+	if e.outer != nil {
+		return e.outer.GetVariableInfo(name)
+	}
+	return "", false, false
+}
+
+// AssignChecked impide modificar constantes.
+func (e *Environment) AssignChecked(name string, value Object) bool {
+	if _, ok := e.store[name]; ok {
+		if e.constants[name] {
+			return false
+		}
+		e.store[name] = value
+		return true
+	}
+	if e.outer != nil {
+		return e.outer.AssignChecked(name, value)
 	}
 	return false
 }
