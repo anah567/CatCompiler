@@ -193,4 +193,6 @@ Cómo lo verifiqué yo:
 - [COMPLETAR: qué archivos/funciones revisé línea por línea y qué entendí de cada una]
 - [COMPLETAR: entradas que probé a mano en el REPL (cuando P3 lo adapte) o en las pruebas]
 - [COMPLETAR: cambios que hice yo mismo después de revisar, si los hubo]
-- [COMPLETAR: decisiones de la sección 2 que confirmé con Persona 2 y Persona 3]
+- Las decisiones de la sección 2 **no** se pudieron consultar con Persona 2 y Persona 3
+  antes de escribirlas (no tenía sus datos de contacto ni el repositorio del grupo); se
+  dejaron como definitivas en CONTRATO_AST.md. [COMPLETAR: cambios que pidieron después, si hubo]

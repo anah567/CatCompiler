@@ -5,6 +5,10 @@ Este documento fija **qué nodos produce el parser** y qué contiene cada uno, p
 Persona 2 (evaluador) y Persona 3 (REPL / ejemplos / pruebas) puedan trabajar sin
 esperar a que el parser esté terminado.
 
+**Estado: definitivo.** Las decisiones de este contrato (y las de `DECISIONES_P1.md` §2)
+se tomaron sin poder consultarlas con el grupo; son el punto de partida acordado. Si
+alguien necesita cambiar un nodo, se cambia primero este documento y se avisa al grupo.
+
 ## 0. Lo que NO cambia (firmas públicas)
 
 ```go
@@ -361,7 +365,7 @@ CallExpression
 
 | Nodo | Qué hacer |
 |---|---|
-| `Program` | Registrar funciones y globales en orden; si existe `main`, llamarla al final (decisión a confirmar). |
+| `Program` | Registrar funciones y globales en orden; si existe `main`, llamarla al final (en el REPL, sin `main`, se evalúan las sentencias sueltas). |
 | `VarDeclaration` | Crear la variable en el **ámbito actual**. Sin valor: valor por defecto (decisión: 0 / 0.0 / false / ""). Arreglo: crear `ArraySize` elementos o usar `Elements`. Respetar `Const`. Convertir según `Type` (p. ej. `double d = 3;` guarda 3.0). |
 | `VarDeclarationList` | Evaluar cada `VarDeclaration` en orden, en el mismo ámbito. |
 | `FunctionDeclaration` | Guardar la función por nombre (`Params[i].Name.Value`). Si `Body == nil` es prototipo: no hacer nada. |
