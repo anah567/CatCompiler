@@ -64,6 +64,8 @@ go test ./parser -run '^$' -fuzz=FuzzParser -fuzztime=30s   # opcional
 14. Recuperación de errores: `synchronize` salta hasta `;`, hasta la `}` que cierra un
     bloque abierto en la zona saltada, o hasta antes de la `}` del bloque de afuera. Evita
     errores en cascada; a cambio, puede saltarse una sentencia buena pegada a la mala.
+    Una `}` en el nivel superior (sin bloque abierto) se salta sin mensaje si viene justo
+    después de un error; si no, se reporta una vez: `se encontró '}' sin una '{' que la abra`.
 15. Se mantuvo `Errors() []string`. **No** se agregó `ErrorList()`: los textos ya traen tipo,
     línea y columna.
 16. `IfExpression`, `WhileExpression` y `ForExpression` **conservan el nombre** del proyecto
@@ -178,6 +180,13 @@ programa de referencia). Lo que pasó en esa sesión, sin adornos:
 - **Lo que no se hizo:** no se hizo `push` porque el único remoto (`origin`) es el
   repositorio del docente; hay que agregar el remoto del grupo. No se tocaron `evaluator/`,
   `objects/`, `repl/`, `main.go` ni los ejemplos.
+- **Segunda sesión (revisión).** Se le pidió a la IA hacer todo el trabajo de nuevo; detectó
+  que ya estaba hecho en la rama y, en vez de rehacerlo, lo revisó: volvió a correr
+  `gofmt`, `go vet` y `go test -race` (todo pasó) y probó a mano unas 50 entradas límite.
+  Encontró **un error en cascada**: `int x = 5` + salto de línea + `}` daba dos errores en la
+  misma posición (el segundo, "se esperaba una expresión pero se encontró '}'", era
+  consecuencia del primero). Se corrigió en `ParseProgram` (decisión 14), se agregaron dos
+  pruebas y el fuzzer volvió a correr 20 s sin fallas.
 
 Cómo lo verifiqué yo:
 

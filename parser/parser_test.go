@@ -614,6 +614,17 @@ func TestErrores(t *testing.T) {
 			want:  []string{"Error sintáctico [línea 3, columna 1]: se esperaba ';' pero se encontró '}'"},
 		},
 		{
+			// La '}' sobrante es parte del mismo error: no se reporta dos veces.
+			name:  "falta ';' antes de '}' en el nivel superior",
+			input: "int x = 5\n}",
+			want:  []string{"Error sintáctico [línea 2, columna 1]: se esperaba ';' pero se encontró '}'"},
+		},
+		{
+			name:  "'}' sin '{'",
+			input: "int x = 5;\n}\nint y = 6;",
+			want:  []string{"Error sintáctico [línea 2, columna 1]: se encontró '}' sin una '{' que la abra"},
+		},
+		{
 			name:  "falta ';' en una expresión",
 			input: "x = 1\ny = 2;",
 			want:  []string{"Error sintáctico [línea 2, columna 1]: se esperaba ';' pero se encontró 'y'"},

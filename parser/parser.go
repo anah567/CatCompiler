@@ -395,17 +395,31 @@ func (p *Parser) synchronize() {
 // sentencia (por ejemplo el ';'), por eso después se llama a nextToken
 // para pasar al primer token de la siguiente sentencia.
 // Si la sentencia agregó errores, antes se llama a synchronize.
+//
+// Una '}' en el nivel superior no cierra ningún bloque. Si llega justo
+// después de un error (por ejemplo "int x = 5" + salto de línea + "}"),
+// es parte del mismo problema y se salta sin otro mensaje; si no, se
+// reporta una sola vez como llave sin abrir.
 func (p *Parser) ParseProgram() *ast.Program {
 	program := &ast.Program{}
 	program.Statements = []ast.Statement{}
+	recuperando := false // true si la sentencia anterior tuvo error
 
 	for !p.curTokenIs(token.EOF) {
+		if p.curTokenIs(token.RBRACE) {
+			if !recuperando {
+				p.syntaxError(p.curToken, "se encontró '}' sin una '{' que la abra")
+			}
+			p.nextToken()
+			continue
+		}
 		errorsBefore := len(p.errors)
 		stmt := p.parseStatement()
 		if stmt != nil {
 			program.Statements = append(program.Statements, stmt)
 		}
-		if len(p.errors) > errorsBefore {
+		recuperando = len(p.errors) > errorsBefore
+		if recuperando {
 			p.synchronize()
 		}
 		p.nextToken()
