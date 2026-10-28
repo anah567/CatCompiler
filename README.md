@@ -4,11 +4,17 @@ CatCompiler es un intérprete educativo desarrollado en Go que permite analizar 
 
 El proyecto incluye un analizador léxico (Lexer), un analizador sintáctico (Parser), un árbol de sintaxis abstracta (AST), un evaluador (Evaluator) y una interfaz interactiva de consola (REPL).
 
+## Integrantes
+
+- Ana Sofia Henao
+- Miguel Angel Quintero
+- Samuel Tabares
+
 ## 1. Requisitos
 
-- Go, en una versión compatible con `go.mod`.
+- Go en una versión compatible con la indicada en `go.mod`.
 - Una terminal para ejecutar los comandos.
-- No se requieren dependencias externas adicionales para las funcionalidades descritas.
+- No se requieren dependencias externas adicionales.
 
 ## 2. Ejecución
 
@@ -18,7 +24,7 @@ Desde la carpeta principal del proyecto:
 go run .
 ```
 
-Este comando inicia el REPL de CatCompiler, que permite seleccionar entre tres modos:
+Este comando inicia el REPL de CatCompiler, que permite trabajar en tres modos:
 
 1. **Lexer:** muestra los tokens del código.
 2. **Parser:** muestra la estructura del AST.
@@ -102,7 +108,7 @@ Ejemplo:
 
 ## 5. Funcionalidades implementadas
 
-Entre las funcionalidades implementadas y comprobadas se encuentran:
+CatCompiler permite trabajar con:
 
 - Declaraciones de variables tipadas.
 - Tipos `int`, `double`, `bool` y `string`.
@@ -112,48 +118,42 @@ Entre las funcionalidades implementadas y comprobadas se encuentran:
 - Ciclos `for` y `while`.
 - Funciones con parámetros y tipos de retorno.
 - Funciones recursivas.
+- Variables globales y locales.
 - Arreglos e indexación.
 - Operadores de asignación e incremento.
 - Salida por pantalla mediante `cout` y `endl`.
-- Detección de errores de sintaxis y de ejecución.
+- Detección de errores de sintaxis y ejecución.
 - Ejecución automática de `main()` al cargar archivos `.cpp`.
 
-El proyecto implementa un subconjunto educativo de C++, no el lenguaje C++ completo.
+El proyecto implementa un subconjunto educativo de C++, no el lenguaje completo.
 
 ## 6. Ejemplos
 
-La carpeta `examples/` contiene programas para demostrar las funcionalidades del intérprete.
+La carpeta `examples/` contiene siete programas que demuestran las funcionalidades del intérprete.
 
-### Variables
+| Archivo | Qué demuestra |
+|---|---|
+| `variables.cpp` | Variables y tipos de datos |
+| `ciclos.cpp` | Ciclos `for` y `while` |
+| `funciones.cpp` | Funciones y cálculo factorial |
+| `condicionales.cpp` | Condicionales y decisiones |
+| `arreglos.cpp` | Declaración, acceso y modificación de arreglos |
+| `recursion.cpp` | Funciones recursivas |
+| `ambitos.cpp` | Diferencias entre variables globales y locales |
+
+Para ejecutar cualquiera de ellos:
 
 ```bash
 go run . examples/variables.cpp
-```
-
-Muestra los valores de variables de diferentes tipos.
-
-### Ciclos
-
-```bash
 go run . examples/ciclos.cpp
-```
-
-Salida:
-
-```text
-Suma: 15
-Contador: 0
-Contador: 1
-Contador: 2
-```
-
-### Funciones
-
-```bash
 go run . examples/funciones.cpp
+go run . examples/condicionales.cpp
+go run . examples/arreglos.cpp
+go run . examples/recursion.cpp
+go run . examples/ambitos.cpp
 ```
 
-Salida:
+Por ejemplo, `examples/funciones.cpp` produce:
 
 ```text
 Factorial de 5: 120
@@ -165,57 +165,70 @@ Factorial de 5: 120
 |---|---|
 | `main.go` | Inicia el REPL o ejecuta archivos `.cpp` |
 | `token/` | Define los tipos de tokens |
-| `lexer/` | Analiza el código fuente y genera tokens |
+| `lexer/` | Convierte el código fuente en tokens |
 | `parser/` | Construye el AST |
 | `ast/` | Define los nodos del árbol sintáctico |
-| `objects/` | Define los objetos de ejecución y los entornos |
+| `objects/` | Define los objetos y entornos de ejecución |
 | `evaluator/` | Ejecuta las instrucciones representadas en el AST |
 | `repl/` | Implementa los modos interactivos y la ejecución de archivos |
-| `examples/` | Contiene programas `.cpp` de demostración |
-| `docs/` | Contiene documentación técnica y la gramática del proyecto |
+| `examples/` | Contiene los programas `.cpp` de demostración |
+| `tests/valid/` | Contiene programas que deben ejecutarse correctamente |
+| `tests/invalid/` | Contiene programas que deben producir errores |
+| `tests/expected/` | Guarda los resultados esperados de las pruebas |
+| `tests/run_tests.sh` | Ejecuta las pruebas de integración |
+| `DISENO_CATCOMPILER.md` | Documento de diseño y arquitectura del intérprete |
 
 ## 8. Pruebas
 
-Para ejecutar todas las pruebas automáticas:
+El proyecto cuenta con pruebas automáticas de Go y pruebas de integración basadas en programas `.cpp`.
+
+### Pruebas de Go
+
+Para ejecutar todas las pruebas:
 
 ```bash
 go test ./...
 ```
 
-Para ver los resultados detallados de las pruebas de integración:
+Para ver las pruebas del paquete REPL:
 
 ```bash
 go test ./repl -v
 ```
 
-Las pruebas verifican funcionalidades del lexer, parser y evaluador, además de la ejecución de programas completos.
+### Pruebas de integración
 
-Entre los casos de integración comprobados están:
+Para ejecutar todos los programas de prueba con un solo comando:
 
-- Ejecución de `main()`.
-- Captura de la salida de `cout`.
-- Funciones con parámetros.
-- Recursividad.
-- Ciclos `for`.
-- Arreglos.
-- Condicionales.
-- Errores de sintaxis.
-- Variables no declaradas.
-- Cantidad incorrecta de argumentos.
-- Validación de archivos `.cpp`.
+```bash
+bash tests/run_tests.sh
+```
 
-Para compilar los paquetes:
+El script ejecuta ocho programas válidos y tres programas inválidos, compara los resultados con los esperados y muestra cuáles pruebas fueron aprobadas.
+
+En la última ejecución se obtuvo:
+
+```text
+Aprobadas: 11
+Fallidas:  0
+```
+
+Los casos comprobados incluyen variables, operaciones, condicionales, ciclos, funciones, recursividad, ámbitos, arreglos y detección de errores.
+
+### Compilación
+
+Para comprobar que el proyecto compila correctamente:
 
 ```bash
 go build ./...
 ```
 
-## 9. Documentación adicional
+## 9. Documento de diseño
 
-La carpeta `docs/` contiene documentación sobre el AST, decisiones de implementación, la gramática del lenguaje y material de estudio.
+El archivo `DISENO_CATCOMPILER.md` presenta la arquitectura del intérprete, una gramática EBNF resumida, las principales decisiones de implementación, las limitaciones del lenguaje y el uso de inteligencia artificial durante el desarrollo.
 
 ## 10. Alcance
 
-CatCompiler es un proyecto académico cuyo propósito es demostrar las fases principales de un intérprete: análisis léxico, análisis sintáctico y evaluación.
+CatCompiler es un proyecto académico cuyo propósito es demostrar las principales fases de un intérprete: análisis léxico, análisis sintáctico y evaluación.
 
 No pretende implementar todas las características del estándar C++.

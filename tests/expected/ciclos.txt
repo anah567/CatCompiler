@@ -1,0 +1,4 @@
+Suma: 15
+Contador: 0
+Contador: 1
+Contador: 2

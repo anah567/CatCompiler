@@ -1,0 +1,4 @@
+Suma: 13
+Multiplicacion: 30
+Comparacion: true
+Logica: true
