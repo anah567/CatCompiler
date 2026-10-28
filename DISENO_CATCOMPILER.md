@@ -134,7 +134,7 @@ El proyecto incluye pruebas automáticas de Go y pruebas de integración con pro
 
 La carpeta `tests/` contiene los programas, los resultados esperados y el script `run_tests.sh`.
 
-En la última ejecución se obtuvieron **15 pruebas aprobadas y 0 fallidas**: nueve casos válidos y seis casos de error. Se comprobaron variables, operaciones, condicionales, ciclos, funciones, recursión, ámbitos, arreglos, funciones integradas y manejo de errores.
+En la última ejecución se obtuvieron **16 pruebas aprobadas y 0 fallidas**: diez casos válidos y seis casos de error. Se comprobaron variables, operaciones, condicionales, ciclos, funciones, recursión, ámbitos, arreglos, funciones integradas y manejo de errores.
 
 Comandos de verificación:
 
@@ -144,4 +144,4 @@ go build ./...
 bash tests/run_tests.sh
 ```
 
-Las pruebas de Go, la compilación y las 15 pruebas de integración finalizaron correctamente.
+Las pruebas de Go, la compilación y las 16 pruebas de integración finalizaron correctamente.

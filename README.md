@@ -156,7 +156,7 @@ Estas funciones y métodos forman parte de la implementación educativa de CatCo
 
 ## 6. Ejemplos
 
-La carpeta `examples/` contiene ocho programas que demuestran las funcionalidades del intérprete.
+La carpeta `examples/` contiene nueve programas que demuestran las funcionalidades del intérprete.
 
 | Archivo | Qué demuestra |
 |---|---|
@@ -181,6 +181,7 @@ go run . examples/arreglos.cpp
 go run . examples/recursion.cpp
 go run . examples/ambitos.cpp
 go run . examples/integradas.cpp
+go run . examples/control.cpp
 ```
 
 Por ejemplo, `examples/funciones.cpp` produce:
@@ -235,7 +236,7 @@ Para ejecutar todos los programas de prueba con un solo comando:
 bash tests/run_tests.sh
 ```
 
-El script ejecuta nueve programas válidos y seis programas inválidos, compara los resultados con los esperados y muestra cuáles pruebas fueron aprobadas.
+El script ejecuta diez programas válidos y seis programas inválidos, compara los resultados con los esperados y muestra cuáles pruebas fueron aprobadas.
 
 En la última ejecución se obtuvo:
 
