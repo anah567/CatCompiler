@@ -6,115 +6,140 @@
 
 ## 1. Descripción general y arquitectura
 
-CatCompiler es un intérprete educativo desarrollado en Go que permite analizar y ejecutar programas escritos en un subconjunto del lenguaje C++.
+CatCompiler es un intérprete educativo desarrollado en Go que analiza y ejecuta programas escritos en un subconjunto de C++.
 
-El proyecto está dividido en componentes que trabajan de manera consecutiva:
+Su funcionamiento sigue estas etapas:
 
 **Código fuente → Lexer → Tokens → Parser → AST → Evaluator → Resultado**
 
-- **Token:** define los tipos de tokens y las palabras reservadas del lenguaje.
-- **Lexer:** lee el código fuente y lo divide en tokens, como identificadores, números, operadores y palabras reservadas.
-- **Parser:** recibe los tokens y comprueba que estén organizados según las reglas del lenguaje.
-- **AST:** representa el programa mediante un árbol de sintaxis abstracta que contiene declaraciones, expresiones y estructuras de control.
-- **Objects:** define los valores que utiliza el intérprete durante la ejecución y los entornos donde se almacenan las variables.
-- **Evaluator:** recorre el AST, realiza las operaciones y ejecuta las instrucciones.
-- **REPL:** permite analizar tokens, visualizar el AST, ejecutar instrucciones y cargar archivos `.cpp`.
+- **Token:** define los tipos de tokens, operadores y palabras reservadas.
+- **Lexer:** convierte el código en tokens e identifica su ubicación.
+- **Parser:** comprueba la sintaxis y construye el AST.
+- **AST:** representa las declaraciones, expresiones y estructuras del programa.
+- **Objects:** define los valores, funciones integradas y entornos de ejecución.
+- **Evaluator:** recorre el AST y ejecuta las instrucciones.
+- **REPL:** permite analizar tokens, visualizar el AST y ejecutar código o archivos `.cpp`.
 
-El programa puede utilizarse desde la terminal en modo interactivo mediante `go run .` o ejecutar un archivo completo mediante `go run . archivo.cpp`. Cuando el archivo contiene una función `main()`, esta se ejecuta automáticamente.
+El intérprete se inicia con `go run .` y permite ejecutar archivos mediante `go run . archivo.cpp`. Si existe una función `main()`, se ejecuta automáticamente.
 
 ## 2. Gramática del lenguaje
 
-El parser utiliza un subconjunto de C++ que incluye declaraciones tipadas, expresiones, condicionales, ciclos, funciones y arreglos.
-
-A continuación, se presenta una versión resumida de sus principales reglas en notación EBNF:
+La siguiente gramática EBNF resume las principales construcciones implementadas. No incluye todas las reglas internas del parser.
 
 ```ebnf
 programa       = { sentencia } ;
 
-sentencia      = declaracion
-               | asignacion, ";"
-               | condicional
-               | ciclo_while
-               | ciclo_for
-               | retorno
-               | salida
-               | expresion, ";" ;
+sentencia      = declaracion | funcion | bloque
+               | condicional | ciclo_while
+               | ciclo_do | ciclo_for
+               | retorno | ruptura | continuacion
+               | salida | expresion, ";" ;
 
-declaracion    = tipo, identificador,
+bloque         = "{", { sentencia }, "}" ;
+
+tipo           = "int" | "double" | "bool" | "string" ;
+tipo_retorno   = tipo | "void" ;
+
+declaracion    = [ "const" ], tipo, identificador,
+                 [ "[", expresion, "]" ],
                  [ "=", expresion ], ";" ;
 
-tipo           = "int" | "double" | "bool"
-               | "string" ;
+funcion        = tipo_retorno, identificador, "(",
+                 [ parametros ], ")", bloque ;
+parametros     = tipo, identificador,
+                 { ",", tipo, identificador } ;
 
-condicional    = "if", "(", expresion, ")",
-                 bloque, [ "else", bloque ] ;
+condicional    = "if", "(", expresion, ")", sentencia,
+                 { "else", "if", "(", expresion, ")",
+                   sentencia },
+                 [ "else", sentencia ] ;
 
-ciclo_while    = "while", "(", expresion, ")",
-                 bloque ;
-
-ciclo_for      = "for", "(", inicio, ";",
-                 condicion, ";", actualizacion, ")",
-                 bloque ;
-
-funcion        = tipo_retorno, identificador,
-                 "(", [ parametros ], ")", bloque ;
+ciclo_while    = "while", "(", expresion, ")", sentencia ;
+ciclo_do       = "do", sentencia,
+                 "while", "(", expresion, ")", ";" ;
+ciclo_for      = "for", "(", [ inicio ], ";",
+                 [ expresion ], ";",
+                 [ expresion ], ")", sentencia ;
 
 retorno        = "return", [ expresion ], ";" ;
+ruptura        = "break", ";" ;
+continuacion   = "continue", ";" ;
 
 salida         = "cout", "<<", expresion,
                  { "<<", expresion }, ";" ;
 
-bloque         = "{", { sentencia }, "}" ;
+expresion      = asignacion ;
+asignacion     = logica_o,
+                 [ ( "=" | "+=" | "-=" ), asignacion ] ;
+logica_o       = logica_y, { "||", logica_y } ;
+logica_y       = igualdad, { "&&", igualdad } ;
+igualdad       = comparacion,
+                 { ( "==" | "!=" ), comparacion } ;
+comparacion    = suma,
+                 { ( "<" | ">" | "<=" | ">=" ), suma } ;
+suma           = producto,
+                 { ( "+" | "-" ), producto } ;
+producto       = unaria,
+                 { ( "*" | "/" | "%" ), unaria } ;
+unaria         = [ "!" | "-" | "+" | "++" | "--" ],
+                 primaria ;
+primaria       = literal | identificador
+               | "(", expresion, ")" ;
 ```
 
-Esta gramática es un resumen explicativo y no representa todas las reglas internas del parser. Las expresiones y la precedencia de los operadores se procesan mediante un parser de Pratt.
+Las llamadas a funciones, el acceso a arreglos, los métodos integrados y otras operaciones se procesan mediante reglas adicionales. La precedencia de operadores se implementa con un parser de Pratt.
 
 ## 3. Decisiones de implementación
 
-**Lenguaje Go:** se eligió Go para separar el intérprete en paquetes, manejar estructuras de datos y desarrollar pruebas automáticas.
+**Lenguaje Go:** se utilizó para organizar el proyecto en paquetes independientes y facilitar las pruebas.
 
-**Variables y ámbitos:** las variables se almacenan en entornos de ejecución. Se utilizan entornos relacionados entre sí para permitir variables globales y locales. Esto evita que una variable local modifique accidentalmente otra variable con el mismo nombre en un ámbito externo.
+**Variables y ámbitos:** se utilizan entornos relacionados entre sí para manejar variables globales, locales y *shadowing*, permitiendo declarar una variable local con el mismo nombre de otra externa.
 
-**Funciones:** las funciones almacenan sus parámetros, tipo de retorno, cuerpo y entorno. Cuando se llaman, se crea un entorno para sus variables locales. Este mecanismo también permite ejecutar funciones recursivas.
+**Funciones:** almacenan sus parámetros, cuerpo, tipo de retorno y entorno. Cada llamada crea un entorno local. Se permite la recursión y se controla la profundidad de llamadas para evitar un desbordamiento de pila por recursión excesiva.
 
-**Arreglos:** se representan como colecciones de valores. El evaluador permite acceder a sus elementos mediante índices y modificar posiciones válidas.
+**Arreglos:** se almacenan como colecciones de valores. Permiten consultar y modificar elementos, con detección de índices fuera de rango.
 
-**Control de flujo:** las estructuras `if`, `while` y `for` se ejecutan evaluando sus condiciones y recorriendo las instrucciones correspondientes. Las operaciones lógicas `&&` y `||` utilizan evaluación de cortocircuito.
+**Control de flujo:** se implementan `if`, `else if`, `else`, `for`, `while`, `do-while`, `break` y `continue`. Los operadores `&&` y `||` utilizan evaluación de cortocircuito.
 
-**Salida:** la instrucción `cout` permite mostrar resultados. La salida se dirige mediante un `io.Writer`, lo que facilita capturarla durante las pruebas automáticas.
+**Funciones integradas:** se implementaron `to_string`, `stoi`, `stod`, `abs`, `max`, `min`, `pow` y `sqrt`, además de los métodos `.size()`, `.length()` y `.push_back()`.
 
-**Errores:** el intérprete identifica problemas sintácticos y errores de ejecución, como el uso de variables no declaradas o llamadas a funciones con una cantidad incorrecta de argumentos.
+**Salida:** `cout` utiliza un `io.Writer` para mostrar resultados y permitir capturarlos en las pruebas.
+
+**Errores:** se detectan errores léxicos y sintácticos con línea y columna, así como errores de ejecución por variables no declaradas, argumentos incorrectos, índices inválidos y recursión excesiva.
 
 ## 4. Limitaciones
 
-CatCompiler no implementa el estándar completo de C++. Su alcance se limita a las construcciones desarrolladas para el proyecto académico.
+CatCompiler no implementa el estándar completo de C++. Sus principales limitaciones son:
 
-Entre sus limitaciones se encuentran la ausencia de soporte general para clases, herencia, plantillas, punteros y bibliotecas estándar completas. Algunas construcciones pueden ser reconocidas durante el análisis sintáctico sin contar con una implementación completa en el evaluador.
+- No admite `vector`, entrada mediante `cin` ni matrices multidimensionales como `int m[2][2]`.
+- No implementa de forma general clases, herencia, plantillas ni punteros.
+- Solo incorpora un conjunto reducido de funciones de la biblioteca estándar.
+- La impresión de booleanos mediante `cout` puede diferir de C++ convencional.
+- Los errores de ejecución no siempre incluyen línea y columna.
+- La protección frente a recursión excesiva utiliza un límite interno de llamadas.
 
-Por lo tanto, un programa válido para un compilador C++ convencional no necesariamente puede ejecutarse en CatCompiler.
+Por estas razones, un programa válido en C++ convencional no necesariamente puede ejecutarse en CatCompiler.
 
 ## 5. Uso de inteligencia artificial
 
-Durante el desarrollo se utilizó inteligencia artificial como herramienta de apoyo para comprender conceptos, analizar errores, proponer casos de prueba, revisar código y mejorar la documentación.
+Durante el desarrollo se utilizó inteligencia artificial como apoyo para comprender conceptos, analizar errores, proponer casos de prueba, revisar código y mejorar la documentación.
 
-Las sugerencias se contrastaron con la implementación y se verificaron mediante pruebas automáticas y ejecuciones de programas. La herramienta no reemplazó la necesidad de comprender las decisiones técnicas ni de comprobar el comportamiento del intérprete.
+Las sugerencias se contrastaron con la implementación y se verificaron mediante pruebas automáticas y ejecución de programas. Las decisiones técnicas y la validación de resultados se realizaron como parte del trabajo del equipo.
 
 ## 6. Verificación
 
-El proyecto cuenta con pruebas unitarias e integrales para comprobar sus componentes.
+El proyecto incluye pruebas automáticas de Go y pruebas de integración con programas `.cpp` válidos e inválidos.
 
-La carpeta `tests/` contiene programas válidos e inválidos, archivos con resultados esperados y el script `run_tests.sh`, que permite ejecutar las pruebas mediante un solo comando.
+La carpeta `tests/` contiene los programas, los resultados esperados y el script `run_tests.sh`.
 
-En la última ejecución se obtuvieron **11 pruebas aprobadas y 0 fallidas**, incluyendo variables, operaciones, condicionales, ciclos, funciones, recursividad, ámbitos, arreglos y detección de errores.
+En la última ejecución se obtuvieron **15 pruebas aprobadas y 0 fallidas**: nueve casos válidos y seis casos de error. Se comprobaron variables, operaciones, condicionales, ciclos, funciones, recursión, ámbitos, arreglos, funciones integradas y manejo de errores.
 
-Adicionalmente, las pruebas automatizadas de Go se ejecutan mediante:
+Comandos de verificación:
 
 ```bash
 go test ./...
-```
-
-El proyecto puede compilarse mediante:
-
-```bash
 go build ./...
+bash tests/run_tests.sh
 ```
+
+Las pruebas de Go, la compilación y las 15 pruebas de integración finalizaron correctamente.

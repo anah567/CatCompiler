@@ -168,6 +168,9 @@ func Eval(node ast.Node, env *objects.Environment) objects.Object {
 		if value, ok := env.Get(n.Value); ok {
 			return value
 		}
+		if builtin, ok := builtins[n.Value]; ok {
+			return builtin
+		}
 		return newError("identificador no definido: %s", n.Value)
 
 	case *ast.PrefixExpression:
@@ -229,6 +232,10 @@ func Eval(node ast.Node, env *objects.Environment) objects.Object {
 		return evalFor(n, env)
 
 	case *ast.CallExpression:
+		// s.size(), v.push_back(x): llamadas a método.
+		if member, ok := n.Function.(*ast.MemberExpression); ok {
+			return evalMethodCall(member, n.Arguments, env)
+		}
 		fn := Eval(n.Function, env)
 		if isError(fn) {
 			return fn
@@ -680,7 +687,15 @@ func evalExpressions(
 // Comprueba la cantidad de argumentos, sus tipos y el retorno.
 // Cada llamada tiene su propio entorno para evitar que los
 // parámetros de una llamada modifiquen los de otra.
+// callDepth cuenta las llamadas activas de funciones del usuario.
+var callDepth int
+
+const maxCallDepth = 10000
+
 func applyFunction(value objects.Object, args []objects.Object) objects.Object {
+	if builtin, ok := value.(*objects.Builtin); ok {
+		return builtin.Fn(args...)
+	}
 	fn, ok := value.(*objects.Function)
 	if !ok {
 		return newError("%s no es una función", value.Type())
@@ -693,6 +708,14 @@ func applyFunction(value objects.Object, args []objects.Object) objects.Object {
 			len(fn.Parameters),
 			len(args),
 		)
+	}
+
+	// Límite de profundidad: una recursión sin caso base produce un
+	// error del lenguaje en lugar de tumbar el intérprete.
+	callDepth++
+	defer func() { callDepth-- }()
+	if callDepth > maxCallDepth {
+		return newError("desbordamiento de pila: más de %d llamadas anidadas", maxCallDepth)
 	}
 
 	// Creamos un ámbito local para esta llamada.
@@ -812,7 +835,7 @@ func evalIndex(container, index objects.Object) objects.Object {
 			)
 		}
 		if i.Value < 0 || i.Value >= int64(len(value.Elements)) {
-			return objects.Null
+			return newError("índice de arreglo fuera de rango: %d", i.Value)
 		}
 		return value.Elements[i.Value]
 
