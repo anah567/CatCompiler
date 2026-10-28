@@ -168,6 +168,7 @@ La carpeta `examples/` contiene ocho programas que demuestran las funcionalidade
 | `recursion.cpp` | Funciones recursivas |
 | `ambitos.cpp` | Diferencias entre variables globales y locales |
 | `integradas.cpp` | Uso de funciones y métodos integrados |
+| `control.cpp` | Condicionales `else if`, ciclos `do-while`, `break`, `continue`, cortocircuito y operadores compuestos. |
 
 Para ejecutar cualquiera de ellos:
 
@@ -239,7 +240,7 @@ El script ejecuta nueve programas válidos y seis programas inválidos, compara 
 En la última ejecución se obtuvo:
 
 ```text
-Aprobadas: 15
+Aprobadas: 16
 Fallidas:  0
 ```
 

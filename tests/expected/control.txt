@@ -1,0 +1,7 @@
+Aprobado
+do-while: 3
+j = 0
+j = 2
+j = 3
+corto: 1
+n % 7 = 2
