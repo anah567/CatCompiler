@@ -315,3 +315,18 @@ func (e *Environment) AssignChecked(name string, value Object) bool {
 	}
 	return false
 }
+
+// BUILTIN_OBJ identifica las funciones integradas (to_string, stoi, ...).
+const BUILTIN_OBJ ObjectType = "BUILTIN"
+
+// BuiltinFunction es una función escrita en Go que el programa puede llamar.
+type BuiltinFunction func(args ...Object) Object
+
+// Builtin envuelve una función integrada para guardarla como un valor más.
+type Builtin struct {
+	Name string
+	Fn   BuiltinFunction
+}
+
+func (b *Builtin) Type() ObjectType { return BUILTIN_OBJ }
+func (b *Builtin) Inspect() string  { return "función integrada " + b.Name }

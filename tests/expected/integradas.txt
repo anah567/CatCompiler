@@ -1,0 +1,6 @@
+size: 4
+arr: 3
+to_string: 5!
+stoi: 13
+max: 7
+abs: 3
