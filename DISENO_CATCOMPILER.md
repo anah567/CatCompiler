@@ -70,7 +70,7 @@ salida         = "cout", "<<", expresion,
 
 expresion      = asignacion ;
 asignacion     = logica_o,
-                 [ ( "=" | "+=" | "-=" ), asignacion ] ;
+                 [ ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" ), asignacion ] ;
 logica_o       = logica_y, { "||", logica_y } ;
 logica_y       = igualdad, { "&&", igualdad } ;
 igualdad       = comparacion,
@@ -82,7 +82,10 @@ suma           = producto,
 producto       = unaria,
                  { ( "*" | "/" | "%" ), unaria } ;
 unaria         = [ "!" | "-" | "+" | "++" | "--" ],
-                 primaria ;
+                 postfija ;
+
+postfija       = primaria, { "++" | "--" } ;
+
 primaria       = literal | identificador
                | "(", expresion, ")" ;
 ```

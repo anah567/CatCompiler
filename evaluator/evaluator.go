@@ -92,8 +92,17 @@ func Eval(node ast.Node, env *objects.Environment) objects.Object {
 				return value
 			}
 
-			// Agregamos el valor convertido a texto.
-			out.WriteString(value.Inspect())
+			// En C++, los booleanos se imprimen como 1 o 0.
+			if booleano, ok := value.(*objects.Boolean); ok {
+				if booleano.Value {
+					out.WriteString("1")
+				} else {
+					out.WriteString("0")
+				}
+			} else {
+				// Los demás valores se imprimen normalmente.
+				out.WriteString(value.Inspect())
+			}
 		}
 
 		// Imprimimos en la salida configurada para este entorno.
@@ -103,6 +112,7 @@ func Eval(node ast.Node, env *objects.Environment) objects.Object {
 		}
 
 		return objects.Null
+
 	case *ast.EndlLiteral:
 		return &objects.String{Value: "\n"}
 
