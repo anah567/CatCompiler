@@ -27,13 +27,13 @@ El intérprete se inicia con `go run .` y permite ejecutar archivos mediante `go
 La siguiente gramática EBNF resume las principales construcciones implementadas. No incluye todas las reglas internas del parser.
 
 ```ebnf
-programa       = { sentencia } ;
+programa = { funcion | sentencia } ;
 
-sentencia      = declaracion | funcion | bloque
-               | condicional | ciclo_while
-               | ciclo_do | ciclo_for
-               | retorno | ruptura | continuacion
-               | salida | expresion, ";" ;
+sentencia = declaracion | bloque
+          | condicional | ciclo_while
+          | ciclo_do | ciclo_for
+          | retorno | ruptura | continuacion
+          | salida | expresion, ";" ;
 
 bloque         = "{", { sentencia }, "}" ;
 
