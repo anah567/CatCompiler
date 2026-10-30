@@ -316,3 +316,278 @@ func TestCortocircuitoOR(t *testing.T) {
 		)
 	}
 }
+
+// TestOperacionesMatematicas comprueba las operaciones básicas.
+func TestOperacionesMatematicas(t *testing.T) {
+	pruebas := []struct {
+		nombre   string
+		codigo   string
+		esperado int64
+	}{
+		{"suma", "5 + 3;", 8},
+		{"resta", "10 - 4;", 6},
+		{"multiplicacion", "6 * 3;", 18},
+		{"division", "20 / 4;", 5},
+		{"modulo", "10 % 3;", 1},
+		{"precedencia", "2 + 3 * 4;", 14},
+	}
+
+	for _, prueba := range pruebas {
+		t.Run(prueba.nombre, func(t *testing.T) {
+			resultado := ejecutarCodigo(t, prueba.codigo)
+
+			entero, ok := resultado.(*objects.Integer)
+			if !ok {
+				t.Fatalf("Se esperaba un entero, se obtuvo %T", resultado)
+			}
+
+			if entero.Value != prueba.esperado {
+				t.Fatalf("Se esperaba %d, se obtuvo %d",
+					prueba.esperado, entero.Value)
+			}
+		})
+	}
+}
+
+// TestCondicionales comprueba que se ejecute la rama correcta.
+func TestCondicionales(t *testing.T) {
+	pruebas := []struct {
+		nombre   string
+		codigo   string
+		esperado int64
+	}{
+		{
+			"if verdadero",
+			"int x = 0; if (true) { x = 10; } x;",
+			10,
+		},
+		{
+			"if falso",
+			"int x = 0; if (false) { x = 10; } x;",
+			0,
+		},
+		{
+			"if else",
+			"int x = 0; if (false) { x = 10; } else { x = 20; } x;",
+			20,
+		},
+		{
+			"else if",
+			"int x = 0; if (false) { x = 10; } else if (true) { x = 30; } x;",
+			30,
+		},
+	}
+
+	for _, prueba := range pruebas {
+		t.Run(prueba.nombre, func(t *testing.T) {
+			resultado := ejecutarCodigo(t, prueba.codigo)
+
+			entero, ok := resultado.(*objects.Integer)
+			if !ok {
+				t.Fatalf("Se esperaba un entero, se obtuvo %T", resultado)
+			}
+
+			if entero.Value != prueba.esperado {
+				t.Fatalf("Se esperaba %d, se obtuvo %d",
+					prueba.esperado, entero.Value)
+			}
+		})
+	}
+} // TestCiclos comprueba que los ciclos se ejecuten correctamente.
+func TestCiclos(t *testing.T) {
+	pruebas := []struct {
+		nombre   string
+		codigo   string
+		esperado int64
+	}{
+		{
+			"while",
+			`int x = 0;
+			 while (x < 5) { x++; }
+			 x;`,
+			5,
+		},
+		{
+			"for",
+			`int suma = 0;
+			 for (int i = 1; i <= 5; i++) {
+			     suma += i;
+			 }
+			 suma;`,
+			15,
+		},
+		{
+			"do while",
+			`int x = 0;
+			 do { x++; } while (x < 3);
+			 x;`,
+			3,
+		},
+		{
+			"do while ejecuta al menos una vez",
+			`int x = 10;
+			 do { x++; } while (x < 5);
+			 x;`,
+			11,
+		},
+	}
+
+	for _, prueba := range pruebas {
+		t.Run(prueba.nombre, func(t *testing.T) {
+			resultado := ejecutarCodigo(t, prueba.codigo)
+
+			entero, ok := resultado.(*objects.Integer)
+			if !ok {
+				t.Fatalf("Se esperaba un entero, se obtuvo %T (%s)",
+					resultado, resultado.Inspect())
+			}
+
+			if entero.Value != prueba.esperado {
+				t.Fatalf("Se esperaba %d, se obtuvo %d",
+					prueba.esperado, entero.Value)
+			}
+		})
+	}
+}
+
+// TestBreakContinue comprueba las instrucciones break y continue.
+func TestBreakContinue(t *testing.T) {
+	pruebas := []struct {
+		nombre   string
+		codigo   string
+		esperado int64
+	}{
+		{
+			"break en for",
+			`int x = 0;
+			 for (int i = 0; i < 10; i++) {
+			     if (i == 4) { break; }
+			     x++;
+			 }
+			 x;`,
+			4,
+		},
+		{
+			"continue en for",
+			`int suma = 0;
+			 for (int i = 0; i < 5; i++) {
+			     if (i == 2) { continue; }
+			     suma += i;
+			 }
+			 suma;`,
+			8,
+		},
+		{
+			"break en while",
+			`int x = 0;
+			 while (true) {
+			     x++;
+			     if (x == 3) { break; }
+			 }
+			 x;`,
+			3,
+		},
+	}
+
+	for _, prueba := range pruebas {
+		t.Run(prueba.nombre, func(t *testing.T) {
+			resultado := ejecutarCodigo(t, prueba.codigo)
+
+			entero, ok := resultado.(*objects.Integer)
+			if !ok {
+				t.Fatalf("Se esperaba un entero, se obtuvo %T (%s)",
+					resultado, resultado.Inspect())
+			}
+
+			if entero.Value != prueba.esperado {
+				t.Fatalf("Se esperaba %d, se obtuvo %d",
+					prueba.esperado, entero.Value)
+			}
+		})
+	}
+}
+
+// TestArreglosAdicionales comprueba lectura y modificación de arreglos.
+func TestArreglosAdicionales(t *testing.T) {
+	pruebas := []struct {
+		nombre   string
+		codigo   string
+		esperado int64
+	}{
+		{
+			"leer elemento",
+			`int a[3] = {10, 20, 30}; a[1];`,
+			20,
+		},
+		{
+			"modificar elemento",
+			`int a[3] = {10, 20, 30}; a[1] = 50; a[1];`,
+			50,
+		},
+		{
+			"sumar elementos",
+			`int a[3] = {10, 20, 30}; a[0] + a[1] + a[2];`,
+			60,
+		},
+	}
+
+	for _, prueba := range pruebas {
+		t.Run(prueba.nombre, func(t *testing.T) {
+			resultado := ejecutarCodigo(t, prueba.codigo)
+
+			entero, ok := resultado.(*objects.Integer)
+			if !ok {
+				t.Fatalf("Se esperaba un entero, se obtuvo %T (%s)",
+					resultado, resultado.Inspect())
+			}
+
+			if entero.Value != prueba.esperado {
+				t.Fatalf("Se esperaba %d, se obtuvo %d",
+					prueba.esperado, entero.Value)
+			}
+		})
+	}
+}
+
+// TestConstantesAdicionales comprueba que no puedan modificarse.
+func TestConstantesAdicionales(t *testing.T) {
+	codigo := `
+		const int x = 10;
+		x = 20;
+	`
+
+	resultado := ejecutarCodigo(t, codigo)
+
+	err, ok := resultado.(*objects.Error)
+	if !ok {
+		t.Fatalf("Se esperaba un error, se obtuvo %T (%s)",
+			resultado, resultado.Inspect())
+	}
+
+	if !strings.Contains(err.Message, "constante") {
+		t.Fatalf("Error inesperado: %s", err.Message)
+	}
+}
+
+// TestErroresEjecucion comprueba errores durante la evaluación.
+func TestErroresEjecucion(t *testing.T) {
+	pruebas := []struct {
+		nombre string
+		codigo string
+	}{
+		{"division por cero", "10 / 0;"},
+		{"variable inexistente", "variableQueNoExiste;"},
+		{"indice fuera de rango", "int a[2] = {1, 2}; a[5];"},
+	}
+
+	for _, prueba := range pruebas {
+		t.Run(prueba.nombre, func(t *testing.T) {
+			resultado := ejecutarCodigo(t, prueba.codigo)
+
+			if _, ok := resultado.(*objects.Error); !ok {
+				t.Fatalf("Se esperaba un error, se obtuvo %T (%s)",
+					resultado, resultado.Inspect())
+			}
+		})
+	}
+}

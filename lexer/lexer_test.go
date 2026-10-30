@@ -233,6 +233,48 @@ func TestNextToken(t *testing.T) {
 				tok(token.EOF, "", 1, 7),
 			},
 		},
+		{
+			name:  "entrada vacía",
+			input: "",
+			want: []token.Token{
+				tok(token.EOF, "", 1, 1),
+			},
+		},
+		{
+			name:  "arreglo constante",
+			input: "const int numeros[3] = {1, 2, 3};",
+			want: []token.Token{
+				tok(token.CONST, "const", 1, 1),
+				tok(token.INT_TYPE, "int", 1, 7),
+				tok(token.IDENT, "numeros", 1, 11),
+				tok(token.LBRACKET, "[", 1, 18),
+				tok(token.INT, "3", 1, 19),
+				tok(token.RBRACKET, "]", 1, 20),
+				tok(token.ASSIGN, "=", 1, 22),
+				tok(token.LBRACE, "{", 1, 24),
+				tok(token.INT, "1", 1, 25),
+				tok(token.COMMA, ",", 1, 26),
+				tok(token.INT, "2", 1, 28),
+				tok(token.COMMA, ",", 1, 29),
+				tok(token.INT, "3", 1, 31),
+				tok(token.RBRACE, "}", 1, 32),
+				tok(token.SEMICOLON, ";", 1, 33),
+				tok(token.EOF, "", 1, 34),
+			},
+		},
+		{
+			name:  "saltos de línea Windows",
+			input: "int x;\r\nint y;",
+			want: []token.Token{
+				tok(token.INT_TYPE, "int", 1, 1),
+				tok(token.IDENT, "x", 1, 5),
+				tok(token.SEMICOLON, ";", 1, 6),
+				tok(token.INT_TYPE, "int", 2, 1),
+				tok(token.IDENT, "y", 2, 5),
+				tok(token.SEMICOLON, ";", 2, 6),
+				tok(token.EOF, "", 2, 7),
+			},
+		},
 	}
 
 	for _, tt := range tests {
