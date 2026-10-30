@@ -327,16 +327,26 @@ func evalBlock(statements []ast.Statement, env *objects.Environment) objects.Obj
 	return result
 }
 
-// Solo false y null son falsos. Por eso 0, "" y [] son verdaderos, una
-// convención explícita del lenguaje que se usa en if y en ambos ciclos.
+// truthy determina si un valor se considera verdadero en una condición.
+// En C++, false y los valores numéricos iguales a cero son falsos.
 func truthy(value objects.Object) bool {
-	if value.Type() == objects.NULL_OBJ {
+	if value == nil || value.Type() == objects.NULL_OBJ {
 		return false
 	}
-	if b, ok := value.(*objects.Boolean); ok {
-		return b.Value
+
+	switch v := value.(type) {
+	case *objects.Boolean:
+		return v.Value
+
+	case *objects.Integer:
+		return v.Value != 0
+
+	case *objects.Double:
+		return v.Value != 0
+
+	default:
+		return true
 	}
-	return true
 }
 
 // nativeBool reutiliza los objetos booleanos compartidos.
@@ -742,12 +752,25 @@ func applyFunction(value objects.Object, args []objects.Object) objects.Object {
 			// Los parámetros declarados como arreglos deben
 			// recibir un arreglo.
 			if fn.Params[i].IsArray {
-				if _, ok := argument.(*objects.Array); !ok {
-					return newError(
-						"el parámetro %s debe recibir un arreglo",
-						parameter.Value,
-					)
+				array, ok := argument.(*objects.Array)
+				if !ok {
+					return newError("el parámetro %s debe recibir un arreglo", parameter.Value)
 				}
+
+				if array.ElementType != "" && paramType != "" && array.ElementType != paramType {
+					return newError("parámetro %s: se esperaba arreglo de %s y se recibió arreglo de %s", parameter.Value, paramType, array.ElementType)
+				}
+
+				// Comprobamos que los elementos tengan el tipo declarado.
+				for j, elemento := range array.Elements {
+					if _, err := convertType(paramType, elemento, false); err != nil {
+						return newError("parámetro %s, posición %d: %s", parameter.Value, j, err.Message)
+					}
+				}
+
+				// Compartimos el arreglo original, como en un parámetro C++.
+				// La protección de constantes está en el propio arreglo.
+				argument = array
 			} else {
 				// Validamos el tipo de los parámetros normales.
 				converted, err := convertType(
@@ -874,6 +897,7 @@ func evalAssign(
 	env *objects.Environment,
 ) objects.Object {
 	switch target := n.Left.(type) {
+
 	case *ast.Identifier:
 		if _, exists := env.Get(target.Value); !exists {
 			return newError(
@@ -882,17 +906,18 @@ func evalAssign(
 			)
 		}
 
-		value := Eval(n.Value, env)
-		if isError(value) {
-			return value
-		}
-
+		// Comprobamos si la variable es constante antes de evaluar el valor.
 		typ, constant, _ := env.GetVariableInfo(target.Value)
 		if constant {
 			return newError(
 				"no se puede modificar constante: %s",
 				target.Value,
 			)
+		}
+
+		value := Eval(n.Value, env)
+		if isError(value) {
+			return value
 		}
 
 		if n.Operator != "=" {
@@ -907,9 +932,21 @@ func evalAssign(
 			}
 		}
 
-		converted, err := convertType(typ, value, false)
+		// Los arreglos se validan como arreglos, no como escalares.
+		current, _ := env.Get(target.Value)
+		_, isArray := current.(*objects.Array)
+		converted, err := convertType(typ, value, isArray)
 		if err != nil {
 			return err
+		}
+
+		if isArray {
+			array := converted.(*objects.Array)
+			for j, elemento := range array.Elements {
+				if _, conversionErr := convertType(typ, elemento, false); conversionErr != nil {
+					return newError("posición %d: %s", j, conversionErr.Message)
+				}
+			}
 		}
 
 		if !env.AssignChecked(target.Value, converted) {
@@ -918,6 +955,7 @@ func evalAssign(
 				target.Value,
 			)
 		}
+
 		return converted
 
 	case *ast.IndexExpression:
@@ -926,15 +964,30 @@ func evalAssign(
 			return container
 		}
 
+		// Comprobamos si el arreglo pertenece a una variable constante.
+		if id, ok := target.Left.(*ast.Identifier); ok {
+			_, constant, _ := env.GetVariableInfo(id.Value)
+
+			if constant {
+				return newError(
+					"no se puede modificar constante: %s",
+					id.Value,
+				)
+			}
+		}
+
 		index := Eval(target.Index, env)
 		if isError(index) {
 			return index
 		}
 
-		// Validar antes de evaluar el nuevo valor evita efectos secundarios
-		// cuando el destino no admite escritura.
+		// Validamos el destino antes de evaluar el nuevo valor.
 		switch c := container.(type) {
+
 		case *objects.Array:
+			if c.Constant {
+				return newError("no se puede modificar un arreglo constante")
+			}
 			i, ok := index.(*objects.Integer)
 			if !ok {
 				return newError(
@@ -942,6 +995,7 @@ func evalAssign(
 					index.Type(),
 				)
 			}
+
 			if i.Value < 0 || i.Value >= int64(len(c.Elements)) {
 				return newError(
 					"índice de arreglo fuera de rango: %d",
@@ -965,15 +1019,9 @@ func evalAssign(
 				}
 			}
 
-			if id, ok := target.Left.(*ast.Identifier); ok {
-				typ, constant, _ := env.GetVariableInfo(id.Value)
-				if constant {
-					return newError(
-						"no se puede modificar constante: %s",
-						id.Value,
-					)
-				}
-				converted, err := convertType(typ, value, false)
+			// El tipo pertenece al arreglo, aunque se use desde otra función.
+			if c.ElementType != "" {
+				converted, err := convertType(c.ElementType, value, false)
 				if err != nil {
 					return err
 				}
@@ -996,6 +1044,7 @@ func evalAssign(
 			if isError(value) {
 				return value
 			}
+
 			c.Put(key, value)
 			return value
 
@@ -1060,7 +1109,9 @@ func evalDeclaration(
 		}
 
 		arr := &objects.Array{
-			Elements: make([]objects.Object, size),
+			Elements:    make([]objects.Object, size),
+			ElementType: n.Type,
+			Constant:    n.Const,
 		}
 
 		for i := range arr.Elements {
@@ -1174,6 +1225,19 @@ func evalIncrement(
 		}
 
 	case *ast.IndexExpression:
+
+		// Comprobamos primero si el arreglo es constante.
+		if id, ok := target.Left.(*ast.Identifier); ok {
+			_, constant, _ := env.GetVariableInfo(id.Value)
+
+			if constant {
+				return newError(
+					"no se puede modificar constante: %s",
+					id.Value,
+				)
+			}
+		}
+
 		// Obtenemos el arreglo que queremos modificar.
 		container := Eval(target.Left, env)
 		if isError(container) {
@@ -1185,6 +1249,9 @@ func evalIncrement(
 			return newError(
 				"incremento por índice requiere un arreglo",
 			)
+		}
+		if array.Constant {
+			return newError("no se puede modificar un arreglo constante")
 		}
 
 		// Evaluamos la posición.
@@ -1206,17 +1273,6 @@ func evalIncrement(
 				"índice de arreglo fuera de rango: %d",
 				position.Value,
 			)
-		}
-
-		// Comprobamos si el arreglo es constante.
-		if id, ok := target.Left.(*ast.Identifier); ok {
-			_, constant, _ := env.GetVariableInfo(id.Value)
-			if constant {
-				return newError(
-					"no se puede modificar constante: %s",
-					id.Value,
-				)
-			}
 		}
 
 		old = array.Elements[position.Value]
@@ -1301,8 +1357,12 @@ func convertType(
 	array bool,
 ) (objects.Object, *objects.Error) {
 	if array {
-		if _, ok := value.(*objects.Array); !ok {
+		arr, ok := value.(*objects.Array)
+		if !ok {
 			return nil, newError("se esperaba arreglo")
+		}
+		if arr.ElementType != "" && typ != "" && arr.ElementType != typ {
+			return nil, newError("se esperaba arreglo de %s y se recibió arreglo de %s", typ, arr.ElementType)
 		}
 		return value, nil
 	}

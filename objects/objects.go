@@ -116,8 +116,12 @@ func (f *Function) Inspect() string {
 	return "function(" + strings.Join(params, ", ") + ") " + f.Body.String()
 }
 
-// Array conserva el orden y admite modificar posiciones existentes.
-type Array struct{ Elements []Object }
+// Array representa un arreglo del intérprete.
+type Array struct {
+	Elements    []Object
+	ElementType string
+	Constant    bool
+}
 
 func (a *Array) Type() ObjectType { return ARRAY_OBJ }
 

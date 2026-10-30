@@ -11,9 +11,6 @@ import (
 	"polaobesahermosa/objects"
 )
 
-// builtins relaciona cada nombre con su función integrada. El evaluador
-// solo la busca aquí si el nombre NO está en el entorno, así que una
-// función del usuario con el mismo nombre tiene prioridad.
 var builtins = map[string]*objects.Builtin{
 	"to_string": {Name: "to_string", Fn: func(args ...objects.Object) objects.Object {
 		if err := checkArgs("to_string", args, 1); err != nil {
@@ -59,6 +56,9 @@ var builtins = map[string]*objects.Builtin{
 		}
 		switch v := args[0].(type) {
 		case *objects.Integer:
+			if v.Value == math.MinInt64 {
+				return newError("abs: desbordamiento de entero")
+			}
 			if v.Value < 0 {
 				return &objects.Integer{Value: -v.Value}
 			}
@@ -68,8 +68,12 @@ var builtins = map[string]*objects.Builtin{
 		}
 		return newError("abs no admite %s", args[0].Type())
 	}},
-	"max": {Name: "max", Fn: func(args ...objects.Object) objects.Object { return minMax("max", args) }},
-	"min": {Name: "min", Fn: func(args ...objects.Object) objects.Object { return minMax("min", args) }},
+	"max": {Name: "max", Fn: func(args ...objects.Object) objects.Object {
+		return minMax("max", args)
+	}},
+	"min": {Name: "min", Fn: func(args ...objects.Object) objects.Object {
+		return minMax("min", args)
+	}},
 	"pow": {Name: "pow", Fn: func(args ...objects.Object) objects.Object {
 		if err := checkArgs("pow", args, 2); err != nil {
 			return err
@@ -97,16 +101,29 @@ var builtins = map[string]*objects.Builtin{
 }
 
 // evalMethodCall ejecuta llamadas de la forma objeto.metodo(args).
-func evalMethodCall(member *ast.MemberExpression, argExprs []ast.Expression, env *objects.Environment) objects.Object {
+func evalMethodCall(
+	member *ast.MemberExpression,
+	argExprs []ast.Expression,
+	env *objects.Environment,
+) objects.Object {
 	receiver := Eval(member.Object, env)
 	if isError(receiver) {
 		return receiver
 	}
+
+	name := member.Member.Value
+
+	// Impedimos modificar arreglos constantes.
+	if array, ok := receiver.(*objects.Array); ok {
+		if name == "push_back" && array.Constant {
+			return newError("no se puede modificar un arreglo constante")
+		}
+	}
+
 	args, err := evalExpressions(argExprs, env)
 	if err != nil {
 		return err
 	}
-	name := member.Member.Value
 
 	switch r := receiver.(type) {
 	case *objects.String:
@@ -117,6 +134,7 @@ func evalMethodCall(member *ast.MemberExpression, argExprs []ast.Expression, env
 			}
 			return &objects.Integer{Value: int64(len(r.Value))}
 		}
+
 	case *objects.Array:
 		switch name {
 		case "size":
@@ -124,24 +142,53 @@ func evalMethodCall(member *ast.MemberExpression, argExprs []ast.Expression, env
 				return e
 			}
 			return &objects.Integer{Value: int64(len(r.Elements))}
+
 		case "push_back":
 			if e := checkArgs(name, args, 1); e != nil {
 				return e
 			}
-			r.Elements = append(r.Elements, args[0])
+
+			value := args[0]
+
+			// Validamos el tipo del nuevo elemento.
+			if r.ElementType != "" {
+				converted, conversionErr := convertType(
+					r.ElementType,
+					value,
+					false,
+				)
+				if conversionErr != nil {
+					return conversionErr
+				}
+				value = converted
+			}
+
+			r.Elements = append(r.Elements, value)
 			return objects.Null
 		}
 	}
+
 	return newError("%s no tiene el método %s", receiver.Type(), name)
 }
 
-func checkArgs(name string, args []objects.Object, want int) *objects.Error {
+// checkArgs verifica la cantidad de argumentos.
+func checkArgs(
+	name string,
+	args []objects.Object,
+	want int,
+) *objects.Error {
 	if len(args) != want {
-		return newError("%s espera %d argumento(s), llegaron %d", name, want, len(args))
+		return newError(
+			"%s espera %d argumento(s), llegaron %d",
+			name,
+			want,
+			len(args),
+		)
 	}
 	return nil
 }
 
+// toFloat convierte valores numéricos a float64.
 func toFloat(o objects.Object) (float64, bool) {
 	switch v := o.(type) {
 	case *objects.Integer:
@@ -152,17 +199,25 @@ func toFloat(o objects.Object) (float64, bool) {
 	return 0, false
 }
 
-func minMax(name string, args []objects.Object) objects.Object {
+// minMax implementa las funciones min y max.
+func minMax(
+	name string,
+	args []objects.Object,
+) objects.Object {
 	if err := checkArgs(name, args, 2); err != nil {
 		return err
 	}
+
 	a, okA := toFloat(args[0])
 	b, okB := toFloat(args[1])
+
 	if !okA || !okB {
 		return newError("%s espera números", name)
 	}
+
 	if (name == "max") == (a >= b) {
 		return args[0]
 	}
+
 	return args[1]
 }
